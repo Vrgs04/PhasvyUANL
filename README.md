@@ -114,4 +114,3 @@ src/
 supabase/
   schema.sql
 ```
-"# PhasvyUANL" 
