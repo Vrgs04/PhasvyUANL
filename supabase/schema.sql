@@ -27,6 +27,7 @@ create table public.users (
   email text not null,
   full_name text,
   whatsapp text,
+  avatar_url text,
   faculty_id uuid references public.faculties(id) on delete set null,
   role public.user_role not null default 'user',
   is_blocked boolean not null default false,
@@ -133,6 +134,9 @@ begin
   return new;
 end;
 $$;
+
+alter table public.users
+add column if not exists avatar_url text;
 
 create trigger on_auth_user_created
 after insert on auth.users
@@ -261,14 +265,63 @@ using (
   and (owner = auth.uid() or public.is_admin())
 );
 
+-- Storage bucket and policies for profile avatars.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'avatars',
+  'avatars',
+  true,
+  2097152,
+  array['image/png', 'image/jpeg', 'image/webp']
+)
+on conflict (id) do update
+set public = excluded.public,
+    file_size_limit = excluded.file_size_limit,
+    allowed_mime_types = excluded.allowed_mime_types;
+
+create policy "Public read avatars"
+on storage.objects for select
+using (bucket_id = 'avatars');
+
+create policy "Users upload own avatar"
+on storage.objects for insert
+with check (
+  bucket_id = 'avatars'
+  and auth.role() = 'authenticated'
+  and owner = auth.uid()
+  and (storage.foldername(name))[1] = auth.uid()::text
+);
+
+create policy "Users update own avatar"
+on storage.objects for update
+using (
+  bucket_id = 'avatars'
+  and owner = auth.uid()
+  and (storage.foldername(name))[1] = auth.uid()::text
+)
+with check (
+  bucket_id = 'avatars'
+  and owner = auth.uid()
+  and (storage.foldername(name))[1] = auth.uid()::text
+);
+
+create policy "Users delete own avatar"
+on storage.objects for delete
+using (
+  bucket_id = 'avatars'
+  and (owner = auth.uid() or public.is_admin())
+);
+
 insert into public.faculties (name) values
   ('FIME'),
-  ('FACPYA'),
+  ('FACPyA'),
   ('FCFM'),
   ('FARQ'),
-  ('FACDYC'),
+  ('FACDyC'),
   ('Medicina'),
   ('Odontologia'),
+  ('FAPSI'),
+  ('FCQ'),
   ('Psicologia'),
   ('Filosofia y Letras'),
   ('Ciencias Biologicas')
