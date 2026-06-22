@@ -9,10 +9,10 @@ const currency = new Intl.NumberFormat('es-MX', {
 });
 
 const navItems = [
-  { id: 'explore', label: 'Explorar', icon: '⌕' },
+  { id: 'explore', label: 'Explorar', icon: 'E' },
   { id: 'create', label: 'Publicar', icon: '+' },
-  { id: 'mine', label: 'Mias', icon: '▣' },
-  { id: 'profile', label: 'Perfil', icon: '◦' },
+  { id: 'mine', label: 'Mias', icon: 'M' },
+  { id: 'profile', label: 'Perfil', icon: 'P' },
 ];
 
 function cx(...classes) {
@@ -144,23 +144,19 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen pb-24 text-ink md:pb-0">
-      <Header user={user} profile={profile} onNavigate={setView} />
+    <div className="min-h-screen pb-24 text-ink md:pb-10">
+      <Header user={user} profile={profile} view={view} onNavigate={setView} isAdmin={isAdmin} />
 
       {notice && (
         <button
-          className="fixed left-4 right-4 top-4 z-50 rounded-2xl bg-ink px-4 py-3 text-left text-sm font-semibold text-white shadow-ios md:left-auto md:right-8 md:w-96"
+          className="fixed left-4 right-4 top-4 z-50 rounded-3xl border border-white/20 bg-ink/90 px-4 py-3 text-left text-sm font-semibold text-white shadow-ios backdrop-blur-xl md:left-auto md:right-8 md:w-96"
           onClick={() => setNotice('')}
         >
           {notice}
         </button>
       )}
 
-      <main className="mx-auto grid w-full max-w-7xl gap-6 px-4 pb-8 pt-4 md:grid-cols-[280px_1fr] md:px-6">
-        <aside className="hidden md:block">
-          <Sidebar view={view} setView={setView} isAdmin={isAdmin} />
-        </aside>
-
+      <main className="mx-auto w-full max-w-7xl px-4 pb-8 pt-5 md:px-6">
         <section className="min-w-0">
           {!isSupabaseConfigured && <SetupWarning />}
 
@@ -239,7 +235,7 @@ function App() {
       </main>
 
       <button
-        className="fixed bottom-24 right-5 z-30 grid h-14 w-14 place-items-center rounded-full bg-campus text-3xl font-light text-white shadow-ios md:hidden"
+        className="fixed bottom-24 right-5 z-30 grid h-14 w-14 place-items-center rounded-full border border-white/20 bg-white/10 text-3xl font-light text-white shadow-ios backdrop-blur-2xl md:hidden"
         onClick={() => setView(user ? 'create' : 'profile')}
         aria-label="Crear publicacion"
       >
@@ -261,16 +257,47 @@ function App() {
   );
 }
 
-function Header({ user, profile, onNavigate }) {
+function Header({ user, profile, view, onNavigate, isAdmin }) {
+  const items = isAdmin ? [...navItems, { id: 'admin', label: 'Admin', icon: 'A' }] : navItems;
+  const displayName = user ? profile?.full_name?.split(' ')[0] ?? user.email?.split('@')[0] ?? 'Perfil' : 'Invitado';
+
   return (
-    <header className="sticky top-0 z-20 border-b border-white/80 bg-mist/80 px-4 py-3 backdrop-blur-xl md:px-6">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
-        <button className="text-left" onClick={() => onNavigate('explore')}>
-          <p className="text-lg font-black leading-tight">Phasvy Campus</p>
-          <p className="text-xs font-semibold text-slate-500">Marketplace UANL</p>
+    <header className="sticky top-0 z-20 px-3 py-3 md:px-6">
+      <div className="liquid mx-auto grid max-w-7xl gap-3 rounded-[28px] px-3 py-3 md:grid-cols-[minmax(190px,0.75fr)_auto_minmax(190px,0.75fr)] md:items-center">
+        <button
+          className="flex min-w-0 items-center gap-3 rounded-3xl px-2 py-1 text-left transition hover:bg-white/10"
+          onClick={() => onNavigate(user ? 'profile' : 'profile')}
+        >
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-sm font-black text-ink">
+            {displayName.slice(0, 1).toUpperCase()}
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-black">{displayName}</span>
+            <span className="block truncate text-xs font-semibold text-white/60">{user ? 'Cuenta activa' : 'Iniciar sesion'}</span>
+          </span>
         </button>
-        <button className="secondary-btn !rounded-full !px-3 !py-2" onClick={() => onNavigate(user ? 'profile' : 'profile')}>
-          {user ? profile?.full_name?.split(' ')[0] ?? 'Perfil' : 'Entrar'}
+
+        <nav className="hidden rounded-3xl bg-white/10 p-1 md:flex md:w-auto">
+          {items.map((item) => (
+            <button
+              key={item.id}
+              className={cx(
+                'rounded-2xl px-3 py-2 text-xs font-black transition md:px-4',
+                view === item.id ? 'bg-white text-ink shadow-soft' : 'text-white/70 hover:bg-white/10 hover:text-white',
+              )}
+              onClick={() => onNavigate(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
+        <button className="hidden justify-self-end rounded-3xl border border-white/20 bg-white px-4 py-3 text-sm font-black text-ink shadow-soft transition active:scale-[0.98] md:inline-flex" onClick={() => onNavigate(user ? 'create' : 'profile')}>
+          Publicar
+        </button>
+
+        <button className="absolute right-5 top-5 rounded-full bg-white/10 px-3 py-1 text-xs font-black text-white md:hidden" onClick={() => onNavigate('explore')}>
+          Phasvy
         </button>
       </div>
     </header>
@@ -278,7 +305,7 @@ function Header({ user, profile, onNavigate }) {
 }
 
 function Sidebar({ view, setView, isAdmin }) {
-  const items = isAdmin ? [...navItems, { id: 'admin', label: 'Admin', icon: '⚙' }] : navItems;
+  const items = isAdmin ? [...navItems, { id: 'admin', label: 'Admin', icon: 'A' }] : navItems;
   return (
     <nav className="panel sticky top-24 space-y-2 p-3">
       {items.map((item) => (
@@ -296,17 +323,17 @@ function Sidebar({ view, setView, isAdmin }) {
 }
 
 function MobileNav({ view, setView, isAdmin }) {
-  const items = isAdmin ? [...navItems, { id: 'admin', label: 'Admin', icon: '⚙' }] : navItems;
+  const items = isAdmin ? [...navItems, { id: 'admin', label: 'Admin', icon: 'A' }] : navItems;
   return (
-    <nav className="safe-bottom fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 px-2 py-2 backdrop-blur-xl md:hidden">
-      <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
+    <nav className="safe-bottom fixed bottom-0 left-0 right-0 z-40 px-3 pb-3 md:hidden">
+      <div className={cx('liquid mx-auto grid max-w-md gap-1 rounded-[26px] p-1.5', isAdmin ? 'grid-cols-5' : 'grid-cols-4')}>
         {items.map((item) => (
           <button
             key={item.id}
-            className={cx('rounded-2xl px-2 py-2 text-xs font-bold', view === item.id ? 'bg-ink text-white' : 'text-slate-500')}
+            className={cx('rounded-2xl px-2 py-2 text-xs font-black transition', view === item.id ? 'bg-white text-ink' : 'text-white/60')}
             onClick={() => setView(item.id)}
           >
-            <span className="block text-lg leading-none">{item.icon}</span>
+            <span className="mx-auto mb-1 grid h-5 w-5 place-items-center rounded-full text-[10px] leading-none">{item.icon}</span>
             {item.label}
           </button>
         ))}
@@ -327,12 +354,26 @@ function SetupWarning() {
 function Explore({ loading, listings, filters, setFilters, faculties, categories, onOpen }) {
   return (
     <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
-        <div>
-          <p className="label">Compra, vende o encuentra servicios</p>
-          <h1 className="mt-2 text-3xl font-black tracking-tight md:text-5xl">Todo el campus en un solo lugar.</h1>
+      <div className="dark-panel overflow-hidden p-5 md:p-8">
+        <div className="grid gap-6 md:grid-cols-[1fr_auto] md:items-end">
+          <div className="max-w-2xl">
+            <p className="text-xs font-black uppercase tracking-[0.12em] text-white/50">Marketplace UANL</p>
+            <h1 className="mt-3 text-4xl font-black tracking-tight md:text-6xl">Compra y vende dentro del campus.</h1>
+            <p className="mt-4 max-w-xl text-sm font-medium leading-6 text-white/60 md:text-base">
+              Encuentra libros, tecnologia, comida y servicios por facultad. Sin pagos en linea, sin envios, contacto directo por WhatsApp.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 md:w-64">
+            <div className="rounded-3xl border border-white/10 bg-white/10 p-4">
+              <p className="text-3xl font-black">{listings.length}</p>
+              <p className="text-xs font-bold text-white/50">publicaciones</p>
+            </div>
+            <div className="rounded-3xl border border-white/10 bg-white/10 p-4">
+              <p className="text-3xl font-black">UANL</p>
+              <p className="text-xs font-bold text-white/50">facultades</p>
+            </div>
+          </div>
         </div>
-        <div className="panel p-3 text-sm font-bold text-slate-600">{listings.length} publicaciones</div>
       </div>
 
       <Filters filters={filters} setFilters={setFilters} faculties={faculties} categories={categories} />
@@ -358,9 +399,9 @@ function Explore({ loading, listings, filters, setFilters, faculties, categories
 function Filters({ filters, setFilters, faculties, categories }) {
   const update = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
   return (
-    <div className="panel space-y-3 p-3">
+    <div className="panel space-y-3 p-4">
       <input className="field" placeholder="Buscar libros, calculadora, comida, asesorias..." value={filters.q} onChange={(event) => update('q', event.target.value)} />
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-[1.1fr_1.1fr_0.8fr_0.8fr]">
         <select className="field" value={filters.faculty} onChange={(event) => update('faculty', event.target.value)}>
           <option value="">Todas las facultades</option>
           {faculties.map((faculty) => (
@@ -387,20 +428,24 @@ function Filters({ filters, setFilters, faculties, categories }) {
 function ListingCard({ listing, onOpen }) {
   const cover = listing.images?.[0]?.url;
   return (
-    <button className="panel overflow-hidden text-left transition hover:-translate-y-0.5 hover:shadow-ios" onClick={onOpen}>
-      <div className="aspect-[4/3] bg-slate-100">
-        {cover ? <img src={cover} alt={listing.title} className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-4xl text-slate-300">+</div>}
-      </div>
-      <div className="space-y-3 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <h2 className="line-clamp-2 text-lg font-black">{listing.title}</h2>
-          <p className="font-black text-campus">{currency.format(listing.price ?? 0)}</p>
+    <button className="panel overflow-hidden text-left transition hover:-translate-y-1 hover:shadow-ios" onClick={onOpen}>
+      <div className="aspect-[4/3] bg-slate-100 p-2">
+        <div className="h-full overflow-hidden rounded-[22px] bg-slate-200">
+          {cover ? <img src={cover} alt={listing.title} className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-4xl text-slate-300">+</div>}
         </div>
+      </div>
+      <div className="space-y-3 p-4 pt-2">
+        <h2 className="line-clamp-2 text-lg font-black leading-tight">{listing.title}</h2>
         <p className="line-clamp-2 text-sm text-slate-500">{listing.description}</p>
+        <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+          <div className="min-w-0">
+            <p className="truncate text-xs font-black text-slate-500">{listing.faculty?.name ?? 'UANL'}</p>
+            <p className="truncate text-xs font-bold text-slate-400">{listing.category?.name ?? 'General'}</p>
+          </div>
+          <p className="shrink-0 rounded-full bg-ink px-3 py-1.5 text-sm font-black text-white">{currency.format(listing.price ?? 0)}</p>
+        </div>
         <div className="flex flex-wrap gap-2">
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{listing.faculty?.name ?? 'UANL'}</span>
-          <span className="rounded-full bg-mint/15 px-3 py-1 text-xs font-bold text-mint">{listing.category?.name ?? 'General'}</span>
-          {listing.status === 'sold' && <span className="rounded-full bg-coral/15 px-3 py-1 text-xs font-bold text-coral">Vendido</span>}
+          {listing.status === 'sold' && <span className="rounded-full bg-coral/10 px-3 py-1 text-xs font-bold text-coral">Vendido</span>}
         </div>
       </div>
     </button>
@@ -428,7 +473,7 @@ function ListingDetail({ listing, canManage, onClose, onDelete, onSold }) {
           <div className="space-y-5 p-5 md:p-7">
             <div className="flex justify-between gap-4">
               <div>
-                <p className="label">{listing.faculty?.name} · {listing.category?.name}</p>
+                <p className="label">{listing.faculty?.name} - {listing.category?.name}</p>
                 <h2 className="mt-2 text-3xl font-black">{listing.title}</h2>
               </div>
               <button className="secondary-btn !h-11 !w-11 !rounded-full !p-0" onClick={onClose} aria-label="Cerrar">x</button>
@@ -608,6 +653,8 @@ function AuthForm({ setNotice }) {
   const [fullName, setFullName] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [saving, setSaving] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
+  const [showMailHelp, setShowMailHelp] = useState(false);
 
   async function submit(event) {
     event.preventDefault();
@@ -622,25 +669,81 @@ function AuthForm({ setNotice }) {
           });
     setSaving(false);
     if (result.error) return setNotice(result.error.message);
-    setNotice(mode === 'login' ? 'Sesion iniciada.' : 'Cuenta creada. Revisa tu correo si Supabase requiere confirmacion.');
+    if (mode === 'signup') {
+      setVerificationSent(true);
+      setShowMailHelp(false);
+      return;
+    }
+    setNotice('Sesion iniciada.');
+  }
+
+  if (verificationSent) {
+    return (
+      <div className="mx-auto grid max-w-4xl gap-4 md:grid-cols-[0.9fr_1.1fr]">
+        <div className="dark-panel p-6 md:p-8">
+          <p className="text-xs font-black uppercase tracking-[0.12em] text-white/50">Verifica tu cuenta</p>
+          <h1 className="mt-3 text-4xl font-black tracking-tight">Revisa tu correo.</h1>
+          <p className="mt-4 text-sm leading-6 text-white/60">
+            Enviamos un enlace de verificacion a <strong className="text-white">{email}</strong>. Despues de confirmarlo podras iniciar sesion y entrar a Phasvy Campus.
+          </p>
+        </div>
+        <div className="panel space-y-4 p-5 md:p-6">
+          <div className="rounded-3xl bg-slate-50 p-4">
+            <p className="text-sm font-black">Correo de verificacion enviado</p>
+            <p className="mt-1 text-sm text-slate-500">Supabase protege la app validando que el correo exista antes de activar la cuenta.</p>
+          </div>
+          <button
+            className="primary-btn w-full"
+            onClick={async () => {
+              const result = await supabase.auth.signInWithPassword({ email, password });
+              if (result.error) {
+                setNotice('Todavia no se pudo entrar. Confirma el correo y vuelve a intentar.');
+                return;
+              }
+              setVerificationSent(false);
+              setMode('login');
+            }}
+          >
+            Ya lo recibi
+          </button>
+          <button className="secondary-btn w-full" onClick={() => setShowMailHelp(true)}>
+            No me llego ningun correo
+          </button>
+          {showMailHelp && (
+            <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">
+              Revisa tu bandeja de spam y verifica que tu correo este bien escrito.
+            </div>
+          )}
+        </div>
+      </div>
+    );
   }
 
   return (
-    <form className="panel mx-auto max-w-md space-y-4 p-5" onSubmit={submit}>
-      <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
-        <button type="button" className={cx('rounded-xl py-2 text-sm font-black', mode === 'login' && 'bg-white shadow-soft')} onClick={() => setMode('login')}>Login</button>
-        <button type="button" className={cx('rounded-xl py-2 text-sm font-black', mode === 'signup' && 'bg-white shadow-soft')} onClick={() => setMode('signup')}>Registro</button>
+    <div className="mx-auto grid max-w-4xl gap-4 md:grid-cols-[0.95fr_1.05fr]">
+      <div className="dark-panel p-6 md:p-8">
+        <p className="text-xs font-black uppercase tracking-[0.12em] text-white/50">Acceso campus</p>
+        <h1 className="mt-3 text-4xl font-black tracking-tight">{mode === 'login' ? 'Entra a tu mercado UANL.' : 'Crea tu cuenta en segundos.'}</h1>
+        <p className="mt-4 text-sm leading-6 text-white/60">
+          Publica, guarda contacto y administra tus anuncios desde un perfil simple. Todo pensado para alumnos y entregas dentro del campus.
+        </p>
       </div>
-      {mode === 'signup' && (
-        <>
-          <input className="field" required placeholder="Nombre completo" value={fullName} onChange={(event) => setFullName(event.target.value)} />
-          <input className="field" placeholder="WhatsApp" value={whatsapp} onChange={(event) => setWhatsapp(event.target.value)} />
-        </>
-      )}
-      <input className="field" required type="email" placeholder="Correo UANL o personal" value={email} onChange={(event) => setEmail(event.target.value)} />
-      <input className="field" required type="password" minLength="6" placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} />
-      <button className="primary-btn w-full" disabled={saving}>{saving ? 'Entrando...' : mode === 'login' ? 'Entrar' : 'Crear cuenta'}</button>
-    </form>
+      <form className="panel space-y-4 p-5 md:p-6" onSubmit={submit}>
+        <div className="grid grid-cols-2 gap-2 rounded-3xl bg-slate-100 p-1">
+          <button type="button" className={cx('rounded-2xl py-3 text-sm font-black transition', mode === 'login' && 'bg-white shadow-soft')} onClick={() => setMode('login')}>Login</button>
+          <button type="button" className={cx('rounded-2xl py-3 text-sm font-black transition', mode === 'signup' && 'bg-white shadow-soft')} onClick={() => setMode('signup')}>Registro</button>
+        </div>
+        {mode === 'signup' && (
+          <>
+            <input className="field" required placeholder="Nombre completo" value={fullName} onChange={(event) => setFullName(event.target.value)} />
+            <input className="field" placeholder="WhatsApp" value={whatsapp} onChange={(event) => setWhatsapp(event.target.value)} />
+          </>
+        )}
+        <input className="field" required type="email" placeholder="Correo UANL o personal" value={email} onChange={(event) => setEmail(event.target.value)} />
+        <input className="field" required type="password" minLength="6" placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} />
+        <button className="primary-btn w-full" disabled={saving}>{saving ? 'Procesando...' : mode === 'login' ? 'Entrar' : 'Crear cuenta'}</button>
+      </form>
+    </div>
   );
 }
 
@@ -701,7 +804,7 @@ function AdminPanel({ isAdmin, listings, faculties, categories, reload, onDelete
             <div key={listing.id} className="grid gap-3 p-4 md:grid-cols-[1fr_auto] md:items-center">
               <div>
                 <p className="font-black">{listing.title}</p>
-                <p className="text-sm text-slate-500">{listing.seller?.full_name ?? listing.seller_id} · {listing.status}</p>
+                <p className="text-sm text-slate-500">{listing.seller?.full_name ?? listing.seller_id} - {listing.status}</p>
               </div>
               <div className="flex gap-2">
                 <button className="secondary-btn !py-2" onClick={() => onBlock(listing.seller_id)}>Bloquear</button>
