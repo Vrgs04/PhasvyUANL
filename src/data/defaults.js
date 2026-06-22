@@ -1,12 +1,13 @@
 export const DEFAULT_FACULTIES = [
   'FIME',
-  'FACPYA',
+  'FACPyA',
   'FCFM',
   'FARQ',
-  'FACDYC',
+  'FACDyC',
   'Medicina',
   'Odontologia',
-  'Psicologia',
+  'FAPSI',
+  'FCQ',
   'Filosofia y Letras',
   'Ciencias Biologicas',
 ];
