@@ -15,12 +15,23 @@ const navItems = [
   { id: 'profile', label: 'Perfil', icon: 'P' },
 ];
 
+const QUICK_FACULTIES = ['FIME', 'FACPyA', 'FACDyC', 'Medicina', 'FAPSI', 'FARQ', 'Odontologia', 'FCQ'];
+const MAX_AVATAR_SIZE = 2 * 1024 * 1024;
+
 function cx(...classes) {
   return classes.filter(Boolean).join(' ');
 }
 
 function normalizePhone(phone) {
   return phone.replace(/[^\d]/g, '').replace(/^0+/, '');
+}
+
+function getErrorMessage(error) {
+  const message = String(error?.message ?? error ?? '');
+  if (message.toLowerCase().includes('email rate limit exceeded')) {
+    return 'Supabase limito temporalmente el envio de correos de verificacion. Espera unos minutos antes de intentar otra vez, o configura SMTP propio en Supabase para aumentar el limite.';
+  }
+  return message || 'Ocurrio un error inesperado.';
 }
 
 function App() {
@@ -40,10 +51,14 @@ function App() {
     max: '',
   });
   const [loading, setLoading] = useState(true);
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState(null);
 
   const user = session?.user ?? null;
   const isAdmin = profile?.role === 'admin';
+
+  function notify(message, type = 'success') {
+    setNotice({ message: getErrorMessage(message), type });
+  }
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -94,7 +109,7 @@ function App() {
       )
       .order('created_at', { ascending: false });
 
-    if (error) setNotice(error.message);
+    if (error) notify(error, 'error');
     setListings(data ?? []);
     setLoading(false);
   }
@@ -124,22 +139,22 @@ function App() {
 
   async function deleteListing(id) {
     const { error } = await supabase.from('listings').update({ status: 'deleted' }).eq('id', id);
-    if (error) return setNotice(error.message);
-    setNotice('Publicacion eliminada.');
+    if (error) return notify(error, 'error');
+    notify('Publicacion eliminada.', 'success');
     await loadListings();
   }
 
   async function markSold(id) {
     const { error } = await supabase.from('listings').update({ status: 'sold' }).eq('id', id);
-    if (error) return setNotice(error.message);
-    setNotice('Marcada como vendida.');
+    if (error) return notify(error, 'error');
+    notify('Marcada como vendida.', 'success');
     await loadListings();
   }
 
   async function blockUser(id) {
     const { error } = await supabase.from('users').update({ is_blocked: true }).eq('id', id);
-    if (error) return setNotice(error.message);
-    setNotice('Usuario bloqueado.');
+    if (error) return notify(error, 'error');
+    notify('Usuario bloqueado.', 'success');
     await loadListings();
   }
 
@@ -149,10 +164,13 @@ function App() {
 
       {notice && (
         <button
-          className="fixed left-4 right-4 top-4 z-50 rounded-3xl border border-white/20 bg-ink/90 px-4 py-3 text-left text-sm font-semibold text-white shadow-ios backdrop-blur-xl md:left-auto md:right-8 md:w-96"
-          onClick={() => setNotice('')}
+          className={cx(
+            'fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[28px] border px-5 py-4 text-center text-sm font-black text-white shadow-ios backdrop-blur-2xl',
+            notice.type === 'error' ? 'border-red-300/40 bg-red-600/95' : 'border-emerald-300/40 bg-emerald-600/95',
+          )}
+          onClick={() => setNotice(null)}
         >
-          {notice}
+          {notice.message}
         </button>
       )}
 
@@ -184,7 +202,7 @@ function App() {
                   setView('mine');
                   await loadListings();
                 }}
-                setNotice={setNotice}
+                setNotice={notify}
               />
             </RequireAuth>
           )}
@@ -210,7 +228,7 @@ function App() {
               profile={profile}
               onSaved={() => user && loadProfile(user.id)}
               onSignOut={signOut}
-              setNotice={setNotice}
+              setNotice={notify}
             />
           )}
 
@@ -227,7 +245,7 @@ function App() {
                 }}
                 onDelete={deleteListing}
                 onBlock={blockUser}
-                setNotice={setNotice}
+                setNotice={notify}
               />
             </RequireAuth>
           )}
@@ -260,6 +278,7 @@ function App() {
 function Header({ user, profile, view, onNavigate, isAdmin }) {
   const items = isAdmin ? [...navItems, { id: 'admin', label: 'Admin', icon: 'A' }] : navItems;
   const displayName = user ? profile?.full_name?.split(' ')[0] ?? user.email?.split('@')[0] ?? 'Perfil' : 'Invitado';
+  const avatar = profile?.avatar_url;
 
   return (
     <header className="sticky top-0 z-20 px-3 py-3 md:px-6">
@@ -268,8 +287,8 @@ function Header({ user, profile, view, onNavigate, isAdmin }) {
           className="flex min-w-0 items-center gap-3 rounded-3xl px-2 py-1 text-left transition hover:bg-white/10"
           onClick={() => onNavigate(user ? 'profile' : 'profile')}
         >
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-sm font-black text-ink">
-            {displayName.slice(0, 1).toUpperCase()}
+          <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-white text-sm font-black text-ink">
+            {avatar ? <img src={avatar} alt="" className="h-full w-full object-cover" /> : displayName.slice(0, 1).toUpperCase()}
           </span>
           <span className="min-w-0">
             <span className="block truncate text-sm font-black">{displayName}</span>
@@ -370,7 +389,7 @@ function Explore({ loading, listings, filters, setFilters, faculties, categories
             </div>
             <div className="rounded-3xl border border-white/10 bg-white/10 p-4">
               <p className="text-3xl font-black">UANL</p>
-              <p className="text-xs font-bold text-white/50">facultades</p>
+              <p className="text-xs font-bold text-white/50">universidad</p>
             </div>
           </div>
         </div>
@@ -398,8 +417,37 @@ function Explore({ loading, listings, filters, setFilters, faculties, categories
 
 function Filters({ filters, setFilters, faculties, categories }) {
   const update = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
+  const quickFaculties = QUICK_FACULTIES.map((name) => {
+    const aliases = name === 'FAPSI' ? ['FAPSI', 'Psicologia'] : [name];
+    return {
+      name,
+      faculty: faculties.find((faculty) => aliases.some((alias) => faculty.name.toLowerCase() === alias.toLowerCase())),
+    };
+  }).filter((item) => item.faculty);
+
   return (
     <div className="panel space-y-3 p-4">
+      {quickFaculties.length > 0 && (
+        <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
+          <button
+            className={cx('chip', !filters.faculty && 'chip-active')}
+            type="button"
+            onClick={() => update('faculty', '')}
+          >
+            Todas
+          </button>
+          {quickFaculties.map(({ name, faculty }) => (
+            <button
+              key={faculty.id}
+              className={cx('chip', filters.faculty === faculty.id && 'chip-active')}
+              type="button"
+              onClick={() => update('faculty', faculty.id)}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
       <input className="field" placeholder="Buscar libros, calculadora, comida, asesorias..." value={filters.q} onChange={(event) => update('q', event.target.value)} />
       <div className="grid gap-3 md:grid-cols-[1.1fr_1.1fr_0.8fr_0.8fr]">
         <select className="field" value={filters.faculty} onChange={(event) => update('faculty', event.target.value)}>
@@ -439,7 +487,7 @@ function ListingCard({ listing, onOpen }) {
         <p className="line-clamp-2 text-sm text-slate-500">{listing.description}</p>
         <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
           <div className="min-w-0">
-            <p className="truncate text-xs font-black text-slate-500">{listing.faculty?.name ?? 'UANL'}</p>
+            <p className="truncate text-xs font-black text-slate-500">{listing.faculty?.name ?? 'Campus'}</p>
             <p className="truncate text-xs font-bold text-slate-400">{listing.category?.name ?? 'General'}</p>
           </div>
           <p className="shrink-0 rounded-full bg-ink px-3 py-1.5 text-sm font-black text-white">{currency.format(listing.price ?? 0)}</p>
@@ -548,14 +596,14 @@ function ListingForm({ user, faculties, categories, editing, onDone, setNotice }
 
     if (result.error) {
       setSaving(false);
-      return setNotice(result.error.message);
+      return setNotice(result.error, 'error');
     }
 
     for (const file of files) {
       const path = `${user.id}/${result.data.id}/${Date.now()}-${file.name}`;
       const upload = await supabase.storage.from('listing-images').upload(path, file, { upsert: false });
       if (upload.error) {
-        setNotice(upload.error.message);
+        setNotice(upload.error, 'error');
         continue;
       }
       const { data } = supabase.storage.from('listing-images').getPublicUrl(path);
@@ -567,7 +615,7 @@ function ListingForm({ user, faculties, categories, editing, onDone, setNotice }
     }
 
     setSaving(false);
-    setNotice(editing?.id ? 'Publicacion actualizada.' : 'Publicacion creada.');
+    setNotice(editing?.id ? 'Publicacion actualizada.' : 'Publicacion creada.', 'success');
     onDone();
   }
 
@@ -668,13 +716,13 @@ function AuthForm({ setNotice }) {
             options: { data: { full_name: fullName, whatsapp } },
           });
     setSaving(false);
-    if (result.error) return setNotice(result.error.message);
+    if (result.error) return setNotice(result.error, 'error');
     if (mode === 'signup') {
       setVerificationSent(true);
       setShowMailHelp(false);
       return;
     }
-    setNotice('Sesion iniciada.');
+    setNotice('Sesion iniciada.', 'success');
   }
 
   if (verificationSent) {
@@ -697,7 +745,7 @@ function AuthForm({ setNotice }) {
             onClick={async () => {
               const result = await supabase.auth.signInWithPassword({ email, password });
               if (result.error) {
-                setNotice('Todavia no se pudo entrar. Confirma el correo y vuelve a intentar.');
+                setNotice('Todavia no se pudo entrar. Confirma el correo y vuelve a intentar.', 'error');
                 return;
               }
               setVerificationSent(false);
@@ -748,15 +796,49 @@ function AuthForm({ setNotice }) {
 }
 
 function ProfileForm({ user, profile, onSaved, onSignOut, setNotice }) {
-  const [form, setForm] = useState({ full_name: '', whatsapp: '', faculty_id: '' });
+  const [form, setForm] = useState({ full_name: '', whatsapp: '', faculty_id: '', avatar_url: '' });
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   useEffect(() => {
     setForm({
       full_name: profile?.full_name ?? user.user_metadata?.full_name ?? '',
       whatsapp: profile?.whatsapp ?? user.user_metadata?.whatsapp ?? '',
       faculty_id: profile?.faculty_id ?? '',
+      avatar_url: profile?.avatar_url ?? '',
     });
   }, [profile?.id, user.id]);
+
+  async function uploadAvatar(file) {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setNotice('Solo se permiten imagenes para la foto de perfil.', 'error');
+      return;
+    }
+    if (file.size > MAX_AVATAR_SIZE) {
+      setNotice('La foto de perfil debe pesar menos de 2 MB.', 'error');
+      return;
+    }
+
+    setUploadingAvatar(true);
+    const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+    const path = `${user.id}/avatar-${Date.now()}.${extension}`;
+    const upload = await supabase.storage.from('avatars').upload(path, file, {
+      cacheControl: '3600',
+      upsert: false,
+      contentType: file.type,
+    });
+
+    if (upload.error) {
+      setUploadingAvatar(false);
+      setNotice(upload.error, 'error');
+      return;
+    }
+
+    const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+    setForm((current) => ({ ...current, avatar_url: data.publicUrl }));
+    setUploadingAvatar(false);
+    setNotice('Foto lista. Guarda el perfil para aplicar el cambio.', 'success');
+  }
 
   async function save(event) {
     event.preventDefault();
@@ -766,9 +848,10 @@ function ProfileForm({ user, profile, onSaved, onSignOut, setNotice }) {
       full_name: form.full_name,
       whatsapp: form.whatsapp,
       faculty_id: form.faculty_id || null,
+      avatar_url: form.avatar_url || null,
     });
-    if (error) return setNotice(error.message);
-    setNotice('Perfil guardado.');
+    if (error) return setNotice(error, 'error');
+    setNotice('Perfil guardado.', 'success');
     onSaved();
   }
 
@@ -777,6 +860,21 @@ function ProfileForm({ user, profile, onSaved, onSignOut, setNotice }) {
       <div>
         <p className="label">Perfil</p>
         <h1 className="mt-2 text-3xl font-black">{profile?.full_name || user.email}</h1>
+      </div>
+      <div className="flex items-center gap-4 rounded-3xl bg-slate-50 p-4">
+        <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-full bg-ink text-2xl font-black text-white">
+          {form.avatar_url ? <img src={form.avatar_url} alt="" className="h-full w-full object-cover" /> : (form.full_name || user.email || 'P').slice(0, 1).toUpperCase()}
+        </div>
+        <label className="secondary-btn cursor-pointer">
+          {uploadingAvatar ? 'Subiendo...' : 'Cambiar foto'}
+          <input
+            className="sr-only"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            disabled={uploadingAvatar}
+            onChange={(event) => uploadAvatar(event.target.files?.[0])}
+          />
+        </label>
       </div>
       <input className="field" required placeholder="Nombre completo" value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} />
       <input className="field" placeholder="WhatsApp" value={form.whatsapp} onChange={(event) => setForm({ ...form, whatsapp: event.target.value })} />
@@ -823,13 +921,13 @@ function CatalogManager({ title, table, items, reload, setNotice }) {
   async function add(event) {
     event.preventDefault();
     const { error } = await supabase.from(table).insert({ name });
-    if (error) return setNotice(error.message);
+    if (error) return setNotice(error, 'error');
     setName('');
     await reload();
   }
   async function toggle(item) {
     const { error } = await supabase.from(table).update({ is_active: !item.is_active }).eq('id', item.id);
-    if (error) return setNotice(error.message);
+    if (error) return setNotice(error, 'error');
     await reload();
   }
   return (
