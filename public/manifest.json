@@ -1,0 +1,26 @@
+{
+  "name": "Phasvy Campus",
+  "short_name": "Phasvy",
+  "description": "Marketplace universitario para alumnos de la UANL.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f8fafc",
+  "theme_color": "#f8fafc",
+  "categories": ["shopping", "education", "social"],
+  "lang": "es-MX",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/apple-touch-icon.svg",
+      "sizes": "180x180",
+      "type": "image/svg+xml"
+    }
+  ]
+}
