@@ -52,6 +52,10 @@ set role = 'admin'
 where email = 'tu-correo@example.com';
 ```
 
+El schema crea los buckets `listing-images` y `avatars`. Si tu proyecto ya existia antes de esta version, vuelve a ejecutar la parte de `avatar_url` y `avatars` del archivo SQL.
+
+Si aparece `email rate limit exceeded`, Supabase limito temporalmente los correos de verificacion del proyecto. Espera unos minutos o configura SMTP propio en Supabase Authentication para produccion.
+
 ## PWA en iPhone
 
 1. Ejecuta `npm run build`.
