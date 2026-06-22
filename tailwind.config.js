@@ -6,9 +6,9 @@ export default {
       colors: {
         ink: '#172033',
         mist: '#f6f8fb',
-        campus: '#4f7cff',
-        mint: '#4fc3a1',
-        coral: '#ff7b7b',
+        campus: '#f97316',
+        mint: '#fb923c',
+        coral: '#ef4444',
       },
       boxShadow: {
         ios: '0 18px 50px rgba(23, 32, 51, 0.10)',
