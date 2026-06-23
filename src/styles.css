@@ -21,10 +21,26 @@ body {
   margin: 0;
   color: #f8fafc;
   background:
-    radial-gradient(circle at 10% 0%, rgba(255, 255, 255, 0.14), transparent 22rem),
-    radial-gradient(circle at 90% 12%, rgba(249, 115, 22, 0.28), transparent 28rem),
-    linear-gradient(180deg, #070503 0%, #1c1209 48%, #fff7ed 48%, #f8fafc 100%);
+    radial-gradient(circle at 8% 0%, rgba(255, 237, 213, 0.22), transparent 24rem),
+    radial-gradient(circle at 88% 10%, rgba(249, 115, 22, 0.42), transparent 30rem),
+    radial-gradient(circle at 50% 34%, rgba(234, 88, 12, 0.2), transparent 34rem),
+    linear-gradient(180deg, #070503 0%, #2b1105 46%, #ffedd5 46%, #fff7ed 100%);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, system-ui, sans-serif;
+}
+
+.ticker-track {
+  display: inline-block;
+  min-width: 200%;
+  animation: ticker 28s linear infinite;
+}
+
+@keyframes ticker {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
 }
 
 button,
@@ -49,9 +65,9 @@ textarea {
 
 @layer components {
   .panel {
-    background: linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.76));
-    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.16);
-    @apply rounded-[28px] border border-white/70 text-ink backdrop-blur-2xl;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(255, 247, 237, 0.82));
+    box-shadow: 0 24px 70px rgba(124, 45, 18, 0.18);
+    @apply rounded-[28px] border border-orange-100/80 text-ink backdrop-blur-2xl;
   }
 
   .liquid {
@@ -83,7 +99,7 @@ textarea {
   }
 
   .chip {
-    @apply whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition;
+    @apply whitespace-nowrap rounded-full border border-orange-200 bg-white px-4 py-2 text-sm font-black text-orange-950 transition hover:border-campus hover:text-campus;
   }
 
   .chip-active {
