@@ -54,7 +54,11 @@ where email = 'tu-correo@example.com';
 
 El schema crea los buckets `listing-images` y `avatars`. Si tu proyecto ya existia antes de esta version, vuelve a ejecutar la parte de `avatar_url` y `avatars` del archivo SQL.
 
+Si la pagina dice `Could not find the table 'public.listings' in the schema cache` o el registro devuelve `{}`, ejecuta `supabase/repair-current-project.sql` completo en Supabase SQL Editor. Ese archivo crea las tablas base, trigger de usuario, buckets y policies necesarias sin borrar datos.
+
 Si aparece `email rate limit exceeded`, Supabase limito temporalmente los correos de verificacion del proyecto. Espera unos minutos o configura SMTP propio en Supabase Authentication para produccion.
+
+Las imagenes del carrusel inicial estan en `public/carousel/`. Puedes reemplazar `slide-bebidas.svg`, `slide-comidas.svg` y `slide-postres.svg` por fotos reales manteniendo los mismos nombres.
 
 ## PWA en iPhone
 
@@ -106,15 +110,18 @@ Cloudflare Pages publicara una URL tipo `https://phasvy-campus.pages.dev`. Como 
 
 ```text
 public/
+  carousel/
   icons/
   manifest.json
   sw.js
 src/
   data/defaults.js
+  data/demo.js
   lib/supabase.js
   App.jsx
   main.jsx
   styles.css
 supabase/
+  repair-current-project.sql
   schema.sql
 ```
