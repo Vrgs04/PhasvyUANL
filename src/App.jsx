@@ -94,6 +94,9 @@ function getErrorMessage(error, context = '') {
   if (message.toLowerCase().includes('user already registered') || message.toLowerCase().includes('already registered')) {
     return 'Ese correo ya esta registrado. Inicia sesion o usa otro correo.';
   }
+  if (message.toLowerCase().includes('provider is not enabled') || message.toLowerCase().includes('unsupported provider')) {
+    return 'Google todavia no esta habilitado en Supabase Auth. Activalo en Authentication > Providers > Google.';
+  }
   if (message.toLowerCase().includes('email not confirmed')) {
     return 'Tu correo aun no esta verificado. Revisa tu bandeja de entrada o spam.';
   }
@@ -1036,6 +1039,23 @@ function AuthForm({ setNotice }) {
     setNotice('Sesion iniciada.', 'success');
   }
 
+  async function signInWithGoogle() {
+    setSaving(true);
+    let result;
+    try {
+      result = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: window.location.origin },
+      });
+    } catch (error) {
+      setSaving(false);
+      setNotice(error, 'error', 'login');
+      return;
+    }
+    setSaving(false);
+    if (result.error) setNotice(result.error, 'error', 'login');
+  }
+
   if (verificationSent) {
     return (
       <div className="mx-auto grid max-w-4xl gap-4 md:grid-cols-[0.9fr_1.1fr]">
@@ -1097,6 +1117,15 @@ function AuthForm({ setNotice }) {
         <div className="grid grid-cols-2 gap-2 rounded-3xl bg-slate-100 p-1">
           <button type="button" className={cx('rounded-2xl py-3 text-sm font-black transition', mode === 'login' && 'bg-white shadow-soft')} onClick={() => setMode('login')}>Login</button>
           <button type="button" className={cx('rounded-2xl py-3 text-sm font-black transition', mode === 'signup' && 'bg-white shadow-soft')} onClick={() => setMode('signup')}>Registro</button>
+        </div>
+        <button type="button" className="secondary-btn flex w-full items-center justify-center gap-3" onClick={signInWithGoogle} disabled={saving}>
+          <span className="grid h-6 w-6 place-items-center rounded-full bg-white text-sm font-black text-ink shadow-soft">G</span>
+          Continuar con Google
+        </button>
+        <div className="flex items-center gap-3 text-xs font-black uppercase tracking-[0.12em] text-slate-400">
+          <span className="h-px flex-1 bg-slate-200" />
+          <span>o con correo</span>
+          <span className="h-px flex-1 bg-slate-200" />
         </div>
         {mode === 'signup' && (
           <>
