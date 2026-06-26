@@ -56,13 +56,25 @@ function normalizePhone(phone) {
   return phone.replace(/[^\d]/g, '').replace(/^0+/, '');
 }
 
-function getErrorMessage(error) {
+function getErrorMessage(error, context = '') {
   if (error && typeof error === 'object' && !error.message && Object.keys(error).length === 0) {
-    return 'No se pudo completar la accion. Revisa que Supabase Auth este activo, que las variables VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY sean correctas y ejecuta supabase/repair-current-project.sql.';
+    if (context === 'login') {
+      return 'No se pudo iniciar sesion. Revisa que Email/Password este habilitado en Supabase Auth y que las variables de Supabase en Cloudflare sean correctas.';
+    }
+    if (context === 'signup') {
+      return 'No se pudo crear la cuenta. Revisa que Email/Password este habilitado en Supabase Auth, que el correo no exista ya y que las variables de Supabase sean correctas.';
+    }
+    return 'No se pudo completar la accion. Revisa que Supabase Auth este activo, que las variables VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY sean correctas y ejecuta supabase/schema.sql.';
   }
   const message = String(error?.message ?? error?.error_description ?? error ?? '');
   if (message === '{}' || message === '[object Object]') {
-    return 'No se pudo completar la accion. Revisa que Email/Password este habilitado en Supabase Auth, que el correo exista o que ya este verificado.';
+    if (context === 'login') {
+      return 'No se pudo iniciar sesion. Verifica correo/contrasena y que tu correo ya este confirmado.';
+    }
+    if (context === 'signup') {
+      return 'No se pudo registrar. Si el correo ya existe, inicia sesion; si no, revisa Email/Password en Supabase Auth.';
+    }
+    return 'No se pudo completar la accion. Revisa la configuracion de Supabase.';
   }
   if (message.toLowerCase().includes('email rate limit exceeded')) {
     return 'Supabase limito temporalmente el envio de correos de verificacion. Espera unos minutos antes de intentar otra vez, o configura SMTP propio en Supabase para aumentar el limite.';
@@ -78,6 +90,9 @@ function getErrorMessage(error) {
   }
   if (message.toLowerCase().includes('invalid login credentials')) {
     return 'Correo o contrasena incorrectos.';
+  }
+  if (message.toLowerCase().includes('user already registered') || message.toLowerCase().includes('already registered')) {
+    return 'Ese correo ya esta registrado. Inicia sesion o usa otro correo.';
   }
   if (message.toLowerCase().includes('email not confirmed')) {
     return 'Tu correo aun no esta verificado. Revisa tu bandeja de entrada o spam.';
@@ -115,8 +130,8 @@ function App() {
   const user = session?.user ?? null;
   const isAdmin = profile?.role === 'admin';
 
-  function notify(message, type = 'success') {
-    setNotice({ message: getErrorMessage(message), type });
+  function notify(message, type = 'success', context = '') {
+    setNotice({ message: getErrorMessage(message, context), type });
   }
 
   useEffect(() => {
@@ -996,16 +1011,23 @@ function AuthForm({ setNotice }) {
       return;
     }
     setSaving(true);
-    const result =
-      mode === 'login'
-        ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({
-            email,
-            password,
-            options: { data: { full_name: fullName, whatsapp: `${phoneCode}${normalizedPhone}` } },
-          });
+    let result;
+    try {
+      result =
+        mode === 'login'
+          ? await supabase.auth.signInWithPassword({ email, password })
+          : await supabase.auth.signUp({
+              email,
+              password,
+              options: { data: { full_name: fullName, whatsapp: `${phoneCode}${normalizedPhone}` } },
+            });
+    } catch (error) {
+      setSaving(false);
+      setNotice(error, 'error', mode);
+      return;
+    }
     setSaving(false);
-    if (result.error) return setNotice(result.error, 'error');
+    if (result.error) return setNotice(result.error, 'error', mode);
     if (mode === 'signup') {
       setVerificationSent(true);
       setShowMailHelp(false);
@@ -1032,9 +1054,15 @@ function AuthForm({ setNotice }) {
           <button
             className="primary-btn w-full"
             onClick={async () => {
-              const result = await supabase.auth.signInWithPassword({ email, password });
+              let result;
+              try {
+                result = await supabase.auth.signInWithPassword({ email, password });
+              } catch (error) {
+                setNotice(error, 'error', 'login');
+                return;
+              }
               if (result.error) {
-                setNotice('Todavia no se pudo entrar. Confirma el correo y vuelve a intentar.', 'error');
+                setNotice(result.error, 'error', 'login');
                 return;
               }
               setVerificationSent(false);
