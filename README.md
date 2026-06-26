@@ -110,18 +110,15 @@ Cloudflare Pages publicara una URL tipo `https://phasvy-campus.pages.dev`. Como 
 
 ```text
 public/
-  carousel/
   icons/
   manifest.json
   sw.js
 src/
   data/defaults.js
-  data/demo.js
   lib/supabase.js
   App.jsx
   main.jsx
   styles.css
 supabase/
-  repair-current-project.sql
   schema.sql
 ```
