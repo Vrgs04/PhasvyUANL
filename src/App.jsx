@@ -62,7 +62,7 @@ function getErrorMessage(error) {
   }
   const message = String(error?.message ?? error?.error_description ?? error ?? '');
   if (message === '{}' || message === '[object Object]') {
-    return 'No se pudo completar la accion. Ejecuta supabase/repair-current-project.sql y revisa que las variables de Supabase esten correctas.';
+    return 'No se pudo completar la accion. Revisa que Email/Password este habilitado en Supabase Auth, que el correo exista o que ya este verificado.';
   }
   if (message.toLowerCase().includes('email rate limit exceeded')) {
     return 'Supabase limito temporalmente el envio de correos de verificacion. Espera unos minutos antes de intentar otra vez, o configura SMTP propio en Supabase para aumentar el limite.';
@@ -75,6 +75,15 @@ function getErrorMessage(error) {
   }
   if (message.toLowerCase().includes('listings_description_check')) {
     return 'La descripcion debe tener al menos 10 caracteres.';
+  }
+  if (message.toLowerCase().includes('invalid login credentials')) {
+    return 'Correo o contrasena incorrectos.';
+  }
+  if (message.toLowerCase().includes('email not confirmed')) {
+    return 'Tu correo aun no esta verificado. Revisa tu bandeja de entrada o spam.';
+  }
+  if (message.toLowerCase().includes('more than one relationship') && message.toLowerCase().includes('listings')) {
+    return 'Supabase tiene relaciones duplicadas en listings. Ejecuta el schema actualizado o espera el redeploy; mientras tanto se muestran datos demo.';
   }
   return message || 'Ocurrio un error inesperado.';
 }
@@ -155,9 +164,27 @@ function App() {
   }
 
   async function loadProfile(userId) {
-    const { data, error } = await supabase.from('users').select('*').eq('id', userId).single();
+    const { data, error } = await supabase.from('users').select('*').eq('id', userId).maybeSingle();
     if (error) {
       notify(error, 'error');
+      return;
+    }
+    if (!data && user) {
+      const { data: created, error: createError } = await supabase
+        .from('users')
+        .upsert({
+          id: user.id,
+          email: user.email,
+          full_name: user.user_metadata?.full_name ?? '',
+          whatsapp: user.user_metadata?.whatsapp ?? '',
+        })
+        .select()
+        .single();
+      if (createError) {
+        notify(createError, 'error');
+        return;
+      }
+      setProfile(created);
       return;
     }
     setProfile(data);
@@ -173,7 +200,7 @@ function App() {
     const { data, error } = await supabase
       .from('listings')
       .select(
-        '*, seller:users(id, full_name, whatsapp, role, is_blocked), faculty:faculties(*), category:categories(*), images:listing_images(*)',
+        '*, faculty:faculties(*), category:categories(*), images:listing_images(*)',
       )
       .order('created_at', { ascending: false });
 
