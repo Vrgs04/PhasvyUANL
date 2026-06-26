@@ -30,6 +30,8 @@ export const DEMO_SELLERS = [
   role: 'seller',
   is_blocked: false,
   avatar_url: '',
+  rating: Number((4.3 + (index % 7) * 0.08).toFixed(1)),
+  reviews_count: 8 + index,
 }));
 
 const products = [
@@ -68,6 +70,8 @@ export const DEMO_LISTINGS = products.map(([title, category, faculty, price, des
   const seller = DEMO_SELLERS[index];
   const facultyRecord = DEMO_FACULTIES.find((item) => item.name === faculty);
   const categoryRecord = DEMO_CATEGORIES.find((item) => item.name === category);
+  const rating = Number((4.2 + (index % 6) * 0.12).toFixed(1));
+  const reviewCount = 3 + (index % 8);
   return {
     id: `demo-listing-${index + 1}`,
     seller_id: seller.id,
@@ -84,6 +88,30 @@ export const DEMO_LISTINGS = products.map(([title, category, faculty, price, des
     faculty: facultyRecord,
     category: categoryRecord,
     images: [{ id: `img-${index + 1}`, url: imageByType[type] }],
+    rating,
+    reviews_count: reviewCount,
+    reviews: [
+      {
+        id: `demo-review-${index + 1}-1`,
+        listing_id: `demo-listing-${index + 1}`,
+        reviewer_id: `demo-buyer-${index + 1}`,
+        seller_id: seller.id,
+        rating,
+        comment: category === 'Servicios' ? 'Buen trato, respondio rapido y explico todo claro.' : 'Producto tal como lo describio, entrega rapida dentro de la facultad.',
+        status: 'visible',
+        created_at: new Date(Date.now() - (index + 2) * 86400000).toISOString(),
+      },
+      {
+        id: `demo-review-${index + 1}-2`,
+        listing_id: `demo-listing-${index + 1}`,
+        reviewer_id: `demo-buyer-extra-${index + 1}`,
+        seller_id: seller.id,
+        rating: Math.max(4, Number((rating - 0.2).toFixed(1))),
+        comment: 'Comunicacion clara por WhatsApp y punto de entrega facil de encontrar.',
+        status: 'visible',
+        created_at: new Date(Date.now() - (index + 5) * 86400000).toISOString(),
+      },
+    ],
     is_demo: true,
   };
 });

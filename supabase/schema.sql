@@ -114,6 +114,29 @@ create table if not exists public.favorites (
   primary key (user_id, listing_id)
 );
 
+create table if not exists public.listing_reviews (
+  id uuid primary key default gen_random_uuid(),
+  listing_id uuid not null references public.listings(id) on delete cascade,
+  reviewer_id uuid not null references public.users(id) on delete cascade,
+  seller_id uuid not null references public.users(id) on delete cascade,
+  rating int not null check (rating between 1 and 5),
+  comment text not null check (char_length(comment) between 12 and 360),
+  status text not null default 'visible' check (status in ('visible', 'hidden')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (listing_id, reviewer_id),
+  check (reviewer_id <> seller_id)
+);
+
+alter table public.listing_reviews add column if not exists listing_id uuid references public.listings(id) on delete cascade;
+alter table public.listing_reviews add column if not exists reviewer_id uuid references public.users(id) on delete cascade;
+alter table public.listing_reviews add column if not exists seller_id uuid references public.users(id) on delete cascade;
+alter table public.listing_reviews add column if not exists rating int;
+alter table public.listing_reviews add column if not exists comment text;
+alter table public.listing_reviews add column if not exists status text not null default 'visible';
+alter table public.listing_reviews add column if not exists created_at timestamptz not null default now();
+alter table public.listing_reviews add column if not exists updated_at timestamptz not null default now();
+
 create index if not exists listings_search_idx on public.listings using gin (
   to_tsvector('spanish', coalesce(title, '') || ' ' || coalesce(description, ''))
 );
@@ -121,6 +144,8 @@ create index if not exists listings_faculty_idx on public.listings(faculty_id);
 create index if not exists listings_category_idx on public.listings(category_id);
 create index if not exists listings_seller_idx on public.listings(seller_id);
 create index if not exists listing_images_listing_idx on public.listing_images(listing_id);
+create index if not exists listing_reviews_listing_idx on public.listing_reviews(listing_id);
+create index if not exists listing_reviews_seller_idx on public.listing_reviews(seller_id);
 
 create or replace function public.touch_updated_at()
 returns trigger
@@ -140,6 +165,11 @@ for each row execute function public.touch_updated_at();
 drop trigger if exists touch_listings_updated_at on public.listings;
 create trigger touch_listings_updated_at
 before update on public.listings
+for each row execute function public.touch_updated_at();
+
+drop trigger if exists touch_listing_reviews_updated_at on public.listing_reviews;
+create trigger touch_listing_reviews_updated_at
+before update on public.listing_reviews
 for each row execute function public.touch_updated_at();
 
 create or replace function public.is_admin()
@@ -190,6 +220,7 @@ alter table public.listings enable row level security;
 alter table public.listing_images enable row level security;
 alter table public.reports enable row level security;
 alter table public.favorites enable row level security;
+alter table public.listing_reviews enable row level security;
 
 drop policy if exists "Public can read active faculties" on public.faculties;
 create policy "Public can read active faculties" on public.faculties
@@ -285,6 +316,39 @@ for update using (public.is_admin()) with check (public.is_admin());
 drop policy if exists "Users manage own favorites" on public.favorites;
 create policy "Users manage own favorites" on public.favorites
 for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "Anyone reads visible listing reviews" on public.listing_reviews;
+create policy "Anyone reads visible listing reviews" on public.listing_reviews
+for select using (status = 'visible' or reviewer_id = auth.uid() or public.is_admin());
+
+drop policy if exists "Authenticated users create listing reviews" on public.listing_reviews;
+create policy "Authenticated users create listing reviews" on public.listing_reviews
+for insert with check (
+  auth.uid() = reviewer_id
+  and status = 'visible'
+  and char_length(comment) between 12 and 360
+  and comment !~* '(https?://|www\.|bit\.ly|wa\.me|t\.me)'
+  and exists (
+    select 1 from public.listings
+    where listings.id = listing_reviews.listing_id
+      and listings.seller_id = listing_reviews.seller_id
+      and listings.seller_id <> auth.uid()
+      and listings.status in ('active', 'sold')
+  )
+);
+
+drop policy if exists "Reviewers update own listing reviews" on public.listing_reviews;
+create policy "Reviewers update own listing reviews" on public.listing_reviews
+for update using (reviewer_id = auth.uid()) with check (
+  reviewer_id = auth.uid()
+  and status = 'visible'
+  and char_length(comment) between 12 and 360
+  and comment !~* '(https?://|www\.|bit\.ly|wa\.me|t\.me)'
+);
+
+drop policy if exists "Admins moderate listing reviews" on public.listing_reviews;
+create policy "Admins moderate listing reviews" on public.listing_reviews
+for update using (public.is_admin()) with check (public.is_admin());
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values

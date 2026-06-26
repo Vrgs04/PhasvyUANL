@@ -71,6 +71,20 @@ create table if not exists public.listing_images (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.listing_reviews (
+  id uuid primary key default gen_random_uuid(),
+  listing_id uuid not null references public.listings(id) on delete cascade,
+  reviewer_id uuid not null references public.users(id) on delete cascade,
+  seller_id uuid not null references public.users(id) on delete cascade,
+  rating int not null check (rating between 1 and 5),
+  comment text not null check (char_length(comment) between 12 and 360),
+  status text not null default 'visible' check (status in ('visible', 'hidden')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (listing_id, reviewer_id),
+  check (reviewer_id <> seller_id)
+);
+
 insert into public.faculties (name) values
   ('FIME'), ('FACPyA'), ('FACDyC'), ('Medicina'), ('FAPSI'), ('FARQ'), ('Odontologia'), ('FCQ')
 on conflict (name) do nothing;
@@ -108,6 +122,7 @@ alter table public.faculties enable row level security;
 alter table public.categories enable row level security;
 alter table public.listings enable row level security;
 alter table public.listing_images enable row level security;
+alter table public.listing_reviews enable row level security;
 
 drop policy if exists "Users read public profiles" on public.users;
 create policy "Users read public profiles" on public.users
@@ -153,6 +168,35 @@ for insert with check (
     where listings.id = listing_images.listing_id
       and listings.seller_id = auth.uid()
   )
+);
+
+drop policy if exists "Anyone reads visible listing reviews" on public.listing_reviews;
+create policy "Anyone reads visible listing reviews" on public.listing_reviews
+for select using (status = 'visible' or reviewer_id = auth.uid());
+
+drop policy if exists "Authenticated users create listing reviews" on public.listing_reviews;
+create policy "Authenticated users create listing reviews" on public.listing_reviews
+for insert with check (
+  auth.uid() = reviewer_id
+  and status = 'visible'
+  and char_length(comment) between 12 and 360
+  and comment !~* '(https?://|www\.|bit\.ly|wa\.me|t\.me)'
+  and exists (
+    select 1 from public.listings
+    where listings.id = listing_reviews.listing_id
+      and listings.seller_id = listing_reviews.seller_id
+      and listings.seller_id <> auth.uid()
+      and listings.status in ('active', 'sold')
+  )
+);
+
+drop policy if exists "Reviewers update own listing reviews" on public.listing_reviews;
+create policy "Reviewers update own listing reviews" on public.listing_reviews
+for update using (reviewer_id = auth.uid()) with check (
+  reviewer_id = auth.uid()
+  and status = 'visible'
+  and char_length(comment) between 12 and 360
+  and comment !~* '(https?://|www\.|bit\.ly|wa\.me|t\.me)'
 );
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)

@@ -48,12 +48,121 @@ const PHONE_CODES = [
   { label: '🇪🇸 +34', value: '34', country: 'Espana' },
 ];
 
+const INFO_PAGES = {
+  about: {
+    title: 'Quienes somos',
+    eyebrow: 'Phasvy Campus',
+    body: [
+      'Phasvy Campus es un marketplace universitario para alumnos de la UANL. Ayuda a encontrar comida, bebidas, postres, libros, tecnologia y servicios cerca de cada facultad.',
+      'La primera version funciona sin pagos en linea y sin envios. El trato se acuerda directamente entre comprador y vendedor por WhatsApp o contacto directo.',
+    ],
+  },
+  stores: {
+    title: 'Visita las tiendas',
+    eyebrow: 'Explorar vendedores',
+    body: [
+      'Explora por facultad para ver publicaciones activas y vendedores destacados. Las calificaciones ayudan a detectar vendedores constantes y productos bien evaluados.',
+      'Revisa el detalle de cada publicacion antes de contactar y acuerda entregas en puntos seguros dentro del campus.',
+    ],
+  },
+  account: {
+    title: 'Detalles de tu cuenta',
+    eyebrow: 'Perfil y publicaciones',
+    body: [
+      'Desde tu perfil puedes actualizar tu nombre, WhatsApp y foto. En Mis publicaciones puedes editar, marcar como vendido o eliminar tus anuncios.',
+      'Para publicar necesitas iniciar sesion. Phasvy protege el flujo con autenticacion de Supabase y reglas de seguridad por usuario.',
+    ],
+  },
+  privacy: {
+    title: 'Politica de privacidad',
+    eyebrow: 'Datos personales',
+    body: [
+      'Usamos tu correo, nombre, WhatsApp y foto de perfil para mostrar tu identidad como vendedor y permitir el contacto dentro del marketplace.',
+      'No se procesan pagos en linea. Los datos se almacenan en Supabase y se usan solo para operar Phasvy Campus.',
+    ],
+  },
+  terms: {
+    title: 'Terminos y condiciones',
+    eyebrow: 'Reglas de uso',
+    body: [
+      'No publiques productos ilegales, contenido enganoso, spam, resenas falsas ni informacion de terceros sin permiso.',
+      'Los acuerdos de compra, entrega y pago se realizan entre usuarios. Phasvy Campus facilita el contacto, pero no gestiona envios ni pagos.',
+    ],
+  },
+  contact: {
+    title: 'Contacto',
+    eyebrow: 'Ayuda y reportes',
+    body: [
+      'Si encuentras una publicacion inapropiada, un vendedor sospechoso o un problema con tu cuenta, contacta al administrador del proyecto.',
+      'Para una version productiva, conecta este apartado a un correo oficial o formulario de soporte dentro de Supabase.',
+    ],
+  },
+  cookies: {
+    title: 'Cookie Policy',
+    eyebrow: 'Sesion y preferencias',
+    body: [
+      'La app puede usar almacenamiento local y cookies tecnicas para mantener la sesion, recordar preferencias y permitir que la PWA funcione correctamente.',
+      'No se usan cookies de publicidad en esta primera version.',
+    ],
+  },
+};
+
 function cx(...classes) {
   return classes.filter(Boolean).join(' ');
 }
 
 function normalizePhone(phone) {
   return phone.replace(/[^\d]/g, '').replace(/^0+/, '');
+}
+
+function getReviews(listing) {
+  return Array.isArray(listing.reviews) ? listing.reviews.filter((review) => review.status !== 'hidden') : [];
+}
+
+function averageRating(reviews, fallback = 0) {
+  if (!reviews.length) return Number(fallback || 0);
+  const total = reviews.reduce((sum, review) => sum + Number(review.rating || 0), 0);
+  return Number((total / reviews.length).toFixed(1));
+}
+
+function getListingRating(listing) {
+  return averageRating(getReviews(listing), listing.rating);
+}
+
+function getSellerStats(listings, sellerId) {
+  const sellerListings = listings.filter((listing) => listing.seller_id === sellerId);
+  const reviews = sellerListings.flatMap((listing) => getReviews(listing));
+  return {
+    rating: averageRating(reviews, sellerListings[0]?.seller?.rating),
+    reviewCount: reviews.length || sellerListings.reduce((sum, listing) => sum + Number(listing.reviews_count || 0), 0),
+    listingCount: sellerListings.length,
+  };
+}
+
+function getTopSellers(listings) {
+  const sellerIds = [...new Set(listings.map((listing) => listing.seller_id).filter(Boolean))];
+  return sellerIds
+    .map((sellerId) => {
+      const listing = listings.find((item) => item.seller_id === sellerId);
+      return {
+        id: sellerId,
+        seller: listing?.seller,
+        ...getSellerStats(listings, sellerId),
+      };
+    })
+    .sort((a, b) => (b.rating - a.rating) || (b.reviewCount - a.reviewCount) || (b.listingCount - a.listingCount))
+    .slice(0, 5);
+}
+
+function isSuspiciousReview(text) {
+  const normalized = text.trim().toLowerCase();
+  return (
+    normalized.length < 12 ||
+    normalized.length > 360 ||
+    /(https?:\/\/|www\.|bit\.ly|wa\.me|t\.me)/i.test(normalized) ||
+    /(.)\1{7,}/.test(normalized) ||
+    /(gratis\s+dinero|promocion\s+externa|compra\s+seguidores)/i.test(normalized)
+  );
 }
 
 function getErrorMessage(error, context = '') {
@@ -119,6 +228,7 @@ function App() {
   const [categories, setCategories] = useState([]);
   const [listings, setListings] = useState([]);
   const [selectedListing, setSelectedListing] = useState(null);
+  const [selectedFacultyId, setSelectedFacultyId] = useState('');
   const [editingListing, setEditingListing] = useState(null);
   const [filters, setFilters] = useState({
     q: '',
@@ -233,8 +343,72 @@ function App() {
       setLoading(false);
       return;
     }
-    setListings(data?.length ? data : DEMO_LISTINGS);
+    setListings(data?.length ? await hydrateListings(data) : DEMO_LISTINGS);
     setLoading(false);
+  }
+
+  async function hydrateListings(rawListings) {
+    if (!rawListings?.length) return [];
+    const sellerIds = [...new Set(rawListings.map((listing) => listing.seller_id).filter(Boolean))];
+    const listingIds = rawListings.map((listing) => listing.id).filter(Boolean);
+
+    const [{ data: sellers }, { data: reviews }] = await Promise.all([
+      sellerIds.length ? supabase.from('users').select('id, email, full_name, whatsapp, avatar_url').in('id', sellerIds) : { data: [] },
+      listingIds.length ? supabase.from('listing_reviews').select('*').in('listing_id', listingIds).eq('status', 'visible') : { data: [] },
+    ]);
+
+    const sellerMap = new Map((sellers ?? []).map((seller) => [seller.id, seller]));
+    const reviewsByListing = new Map();
+    (reviews ?? []).forEach((review) => {
+      const list = reviewsByListing.get(review.listing_id) ?? [];
+      list.push(review);
+      reviewsByListing.set(review.listing_id, list);
+    });
+
+    return rawListings.map((listing) => ({
+      ...listing,
+      seller: sellerMap.get(listing.seller_id) ?? listing.seller,
+      reviews: reviewsByListing.get(listing.id) ?? listing.reviews ?? [],
+    }));
+  }
+
+  function openFaculty(facultyId) {
+    setSelectedFacultyId(facultyId);
+    setFilters((current) => ({ ...current, faculty: facultyId }));
+    setView('faculty');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  async function saveReview(listing, rating, comment) {
+    if (!user) {
+      notify('Inicia sesion para dejar una resena.', 'error');
+      return false;
+    }
+    if (listing.seller_id === user.id) {
+      notify('No puedes calificar tu propia publicacion.', 'error');
+      return false;
+    }
+    if (isSuspiciousReview(comment)) {
+      notify('La resena debe ser real, clara y sin enlaces, spam o texto repetido.', 'error');
+      return false;
+    }
+
+    const payload = {
+      listing_id: listing.id,
+      reviewer_id: user.id,
+      seller_id: listing.seller_id,
+      rating: Number(rating),
+      comment: comment.trim(),
+      status: 'visible',
+    };
+    const { error } = await supabase.from('listing_reviews').upsert(payload, { onConflict: 'listing_id,reviewer_id' });
+    if (error) {
+      notify(error, 'error');
+      return false;
+    }
+    notify('Resena publicada.', 'success');
+    await loadListings();
+    return true;
   }
 
   const visibleListings = useMemo(() => {
@@ -311,6 +485,18 @@ function App() {
               faculties={faculties}
               categories={categories}
               onOpen={setSelectedListing}
+              onOpenFaculty={openFaculty}
+              setView={setView}
+            />
+          )}
+
+          {view === 'faculty' && (
+            <FacultyMarket
+              facultyId={selectedFacultyId || filters.faculty}
+              faculties={faculties}
+              listings={listings.filter((listing) => listing.status !== 'deleted')}
+              onBack={() => setView('explore')}
+              onOpen={setSelectedListing}
             />
           )}
 
@@ -373,6 +559,13 @@ function App() {
               />
             </RequireAuth>
           )}
+
+          {view.startsWith('info-') && (
+            <InfoPage
+              page={INFO_PAGES[view.replace('info-', '')] ?? INFO_PAGES.about}
+              onBack={() => setView('explore')}
+            />
+          )}
         </section>
       </main>
 
@@ -393,6 +586,8 @@ function App() {
           onClose={() => setSelectedListing(null)}
           onDelete={deleteListing}
           onSold={markSold}
+          user={user}
+          onReview={saveReview}
         />
       )}
     </div>
@@ -506,12 +701,12 @@ function SetupWarning() {
   );
 }
 
-function Explore({ loading, listings, filters, setFilters, faculties, categories, onOpen }) {
+function Explore({ loading, listings, filters, setFilters, faculties, categories, onOpen, onOpenFaculty, setView }) {
   const sellerCount = new Set(listings.map((listing) => listing.seller_id)).size;
 
   return (
     <div className="space-y-5">
-      <FacultyTags faculties={faculties} filters={filters} setFilters={setFilters} />
+      <FacultyTags faculties={faculties} selectedFaculty={filters.faculty} onOpenFaculty={onOpenFaculty} />
       <HeroCarousel />
       <FeaturedCategories categories={categories} setFilters={setFilters} />
       <Filters filters={filters} setFilters={setFilters} faculties={faculties} categories={categories} />
@@ -530,7 +725,7 @@ function Explore({ loading, listings, filters, setFilters, faculties, categories
           ))}
         </div>
       )}
-      <SellerJoin sellerCount={sellerCount} listingCount={listings.length} />
+      <SellerJoin sellerCount={sellerCount} listingCount={listings.length} setView={setView} setFilters={setFilters} />
     </div>
   );
 }
@@ -612,7 +807,7 @@ function FeaturedCategories({ categories, setFilters }) {
   );
 }
 
-function FacultyTags({ faculties, filters, setFilters }) {
+function FacultyTags({ faculties, selectedFaculty, onOpenFaculty }) {
   const tags = QUICK_FACULTIES.map((name) => {
     const aliases = name === 'FAPSI' ? ['FAPSI', 'Psicologia'] : [name];
     return {
@@ -632,11 +827,11 @@ function FacultyTags({ faculties, filters, setFilters }) {
               key={name}
               className={cx(
                 'flex items-center gap-2 rounded-full border bg-white px-3 py-2 text-sm font-black shadow-sm transition hover:-translate-y-0.5',
-                filters.faculty === faculty.id ? 'ring-4 ring-orange-200' : '',
+                selectedFaculty === faculty.id ? 'ring-4 ring-orange-200' : '',
               )}
               style={{ borderColor: `${brand.color}55`, color: brand.color }}
               type="button"
-              onClick={() => setFilters((current) => ({ ...current, faculty: faculty.id }))}
+              onClick={() => onOpenFaculty(faculty.id)}
             >
               <img src={brand.logo} alt="" className="h-7 w-7 rounded-full object-contain" />
               {name}
@@ -709,9 +904,105 @@ function Filters({ filters, setFilters, faculties, categories }) {
   );
 }
 
-function SellerJoin({ sellerCount, listingCount }) {
+function FacultyMarket({ facultyId, faculties, listings, onBack, onOpen }) {
+  const faculty = faculties.find((item) => item.id === facultyId);
+  const facultyListings = listings.filter((listing) => !facultyId || listing.faculty_id === facultyId);
+  const topSellers = getTopSellers(facultyListings);
+  const brand = FACULTY_BRANDS[faculty?.name] ?? { color: '#f97316', logo: '/faculties/uanl.svg' };
+
   return (
-    <section className="mx-auto mt-16 max-w-6xl overflow-hidden rounded-[18px] bg-[#f3f3f3] text-center shadow-soft">
+    <div className="space-y-5">
+      <section className="dark-panel overflow-hidden p-5 md:p-7">
+        <button className="secondary-btn !border-white/10 !bg-white/10 !text-white" onClick={onBack}>
+          Volver
+        </button>
+        <div className="mt-6 grid gap-5 md:grid-cols-[1fr_auto] md:items-end">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-200">Explorar por facultad</p>
+            <h1 className="mt-2 text-4xl font-black tracking-tight md:text-6xl">{faculty?.name ?? 'UANL'}</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
+              Todas las publicaciones activas de esta facultad, con vendedores destacados por calificacion y resenas reales.
+            </p>
+          </div>
+          <div className="flex items-center gap-3 rounded-[22px] bg-white/10 p-3">
+            <img src={brand.logo} alt="" className="h-14 w-14 rounded-full bg-white object-contain p-1" />
+            <div>
+              <p className="text-3xl font-black">{facultyListings.length}</p>
+              <p className="text-xs font-bold text-white/60">publicaciones</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="panel p-4 md:p-5">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <p className="label">Top vendedores</p>
+            <h2 className="text-2xl font-black">Mejor calificados</h2>
+          </div>
+          <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-black text-campus">Top 5</span>
+        </div>
+        {topSellers.length === 0 ? (
+          <p className="rounded-3xl bg-orange-50 p-4 text-sm font-bold text-orange-900">Todavia no hay vendedores con publicaciones en esta facultad.</p>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-5">
+            {topSellers.map((item, index) => (
+              <div key={item.id} className="rounded-[22px] border border-orange-100 bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="grid h-9 w-9 place-items-center rounded-full bg-campus text-sm font-black text-white">#{index + 1}</span>
+                  <RatingBadge rating={item.rating} count={item.reviewCount} compact />
+                </div>
+                <p className="mt-4 line-clamp-2 text-sm font-black">{item.seller?.full_name ?? 'Vendedor UANL'}</p>
+                <p className="mt-1 text-xs font-semibold text-slate-500">{item.listingCount} publicaciones activas</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {facultyListings.length === 0 ? (
+        <div className="panel p-8 text-center">
+          <p className="font-black">No hay publicaciones en esta facultad.</p>
+          <p className="mt-1 text-sm text-slate-500">Cuando alguien publique aqui apareceran en esta ventana.</p>
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {facultyListings.map((listing) => (
+            <ListingCard key={listing.id} listing={listing} onOpen={() => onOpen(listing)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SellerJoin({ sellerCount, listingCount, setView, setFilters }) {
+  const go = (nextView) => {
+    setView(nextView);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  const visitStores = () => {
+    setFilters((current) => ({ ...current, faculty: '', category: '', q: '', min: '', max: '' }));
+    go('explore');
+  };
+
+  return (
+    <section
+      className="mx-auto mt-16 max-w-6xl overflow-hidden rounded-[18px] bg-[#f3f3f3] text-center shadow-soft"
+      onClick={(event) => {
+        if (event.target.tagName !== 'BUTTON') return;
+        const text = event.target.textContent.toLowerCase();
+        if (text.includes('quiero')) go('create');
+        if (text.includes('inicio')) go('explore');
+        if (text.includes('quienes')) go('info-about');
+        if (text.includes('tiendas')) visitStores();
+        if (text.includes('cuenta')) go('info-account');
+        if (text.includes('privacidad')) go('info-privacy');
+        if (text.includes('terminos')) go('info-terms');
+        if (text.includes('contacto')) go('info-contact');
+        if (text.includes('cookie')) go('info-cookies');
+      }}
+    >
       <div className="px-6 pb-8 pt-12">
         <h2 className="text-3xl font-black tracking-tight text-slate-950 md:text-4xl">¿Como puedo unirme a Phasvy?</h2>
         <p className="mx-auto mt-5 max-w-2xl text-sm leading-6 text-slate-600">
@@ -763,6 +1054,9 @@ function SellerJoin({ sellerCount, listingCount }) {
 
 function ListingCard({ listing, onOpen }) {
   const cover = listing.images?.[0]?.url;
+  const rating = getListingRating(listing);
+  const reviewCount = getReviews(listing).length || listing.reviews_count || 0;
+  const sellerStats = getSellerStats([listing], listing.seller_id);
   return (
     <button className="panel overflow-hidden text-left transition hover:-translate-y-1 hover:shadow-ios" onClick={onOpen}>
       <div className="aspect-[4/3] bg-slate-100 p-2">
@@ -771,6 +1065,10 @@ function ListingCard({ listing, onOpen }) {
         </div>
       </div>
       <div className="space-y-3 p-4 pt-2">
+        <div className="flex items-center justify-between gap-2">
+          <RatingBadge rating={rating} count={reviewCount} />
+          <RatingBadge rating={sellerStats.rating} count={sellerStats.reviewCount} label="Vendedor" compact />
+        </div>
         <h2 className="line-clamp-2 text-lg font-black leading-tight">{listing.title}</h2>
         <p className="line-clamp-2 text-sm text-slate-500">{listing.description}</p>
         <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
@@ -788,10 +1086,25 @@ function ListingCard({ listing, onOpen }) {
   );
 }
 
-function ListingDetail({ listing, canManage, onClose, onDelete, onSold }) {
+function RatingBadge({ rating, count, label = 'Producto', compact = false }) {
+  const cleanRating = Number(rating || 0);
+  return (
+    <span className={cx('inline-flex items-center gap-1 rounded-full bg-orange-100 text-campus', compact ? 'px-2 py-1 text-[11px] font-black' : 'px-3 py-1.5 text-xs font-black')}>
+      <span aria-hidden="true">★</span>
+      {cleanRating ? cleanRating.toFixed(1) : 'Nuevo'}
+      {!compact && <span className="text-orange-700/70">{label}</span>}
+      {count ? <span className="text-orange-700/70">({count})</span> : null}
+    </span>
+  );
+}
+
+function ListingDetail({ listing, canManage, onClose, onDelete, onSold, user, onReview }) {
   const coverImages = listing.images?.length ? listing.images : [{ url: '' }];
   const phone = normalizePhone(listing.whatsapp || listing.seller?.whatsapp || '');
   const whatsappUrl = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(`Hola, vi tu publicacion "${listing.title}" en Phasvy Campus.`)}` : '';
+  const reviews = getReviews(listing);
+  const productRating = getListingRating(listing);
+  const sellerStats = getSellerStats([listing], listing.seller_id);
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-ink/30 p-3 backdrop-blur-sm md:p-8">
@@ -815,11 +1128,16 @@ function ListingDetail({ listing, canManage, onClose, onDelete, onSold }) {
               <button className="secondary-btn !h-11 !w-11 !rounded-full !p-0" onClick={onClose} aria-label="Cerrar">x</button>
             </div>
             <p className="text-3xl font-black text-campus">{currency.format(listing.price ?? 0)}</p>
+            <div className="flex flex-wrap gap-2">
+              <RatingBadge rating={productRating} count={reviews.length || listing.reviews_count || 0} />
+              <RatingBadge rating={sellerStats.rating} count={sellerStats.reviewCount} label="Vendedor" />
+            </div>
             <p className="whitespace-pre-wrap text-slate-600">{listing.description}</p>
             <div className="rounded-2xl bg-slate-50 p-4 text-sm">
               <p className="font-black">{listing.seller?.full_name ?? 'Vendedor UANL'}</p>
               <p className="text-slate-500">{listing.contact_note || 'Acuerda entrega dentro del campus. No hay pagos en linea ni envios en esta version.'}</p>
             </div>
+            <ReviewSection listing={listing} reviews={reviews} user={user} onReview={onReview} />
             <div className="grid gap-3 sm:grid-cols-2">
               {whatsappUrl ? (
                 <a className="primary-btn" href={whatsappUrl} target="_blank" rel="noreferrer">WhatsApp</a>
@@ -837,6 +1155,71 @@ function ListingDetail({ listing, canManage, onClose, onDelete, onSold }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ReviewSection({ listing, reviews, user, onReview }) {
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState('');
+  const [saving, setSaving] = useState(false);
+  const userReview = reviews.find((review) => review.reviewer_id === user?.id);
+
+  async function submit(event) {
+    event.preventDefault();
+    setSaving(true);
+    const saved = await onReview(listing, rating, comment);
+    setSaving(false);
+    if (saved) setComment('');
+  }
+
+  return (
+    <div className="space-y-3 rounded-[24px] border border-orange-100 bg-orange-50/70 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="label">Resenas</p>
+          <h3 className="font-black">Opiniones del producto</h3>
+        </div>
+        <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-campus">{reviews.length} visibles</span>
+      </div>
+
+      {reviews.length === 0 ? (
+        <p className="rounded-2xl bg-white p-3 text-sm font-semibold text-slate-500">Todavia no hay resenas. Se el primero en calificar con una opinion real.</p>
+      ) : (
+        <div className="max-h-48 space-y-2 overflow-y-auto pr-1">
+          {reviews.slice(0, 6).map((review) => (
+            <div key={review.id ?? `${review.reviewer_id}-${review.created_at}`} className="rounded-2xl bg-white p-3 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-black text-campus">★ {Number(review.rating).toFixed(1)}</span>
+                <span className="text-xs font-semibold text-slate-400">{review.created_at ? new Date(review.created_at).toLocaleDateString('es-MX') : 'Demo'}</span>
+              </div>
+              <p className="mt-1 text-slate-600">{review.comment}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {user ? (
+        <form className="space-y-2 border-t border-orange-100 pt-3" onSubmit={submit}>
+          <div className="grid grid-cols-[7rem_1fr] gap-2">
+            <select className="field" value={rating} onChange={(event) => setRating(event.target.value)}>
+              {[5, 4, 3, 2, 1].map((value) => <option key={value} value={value}>{value} ★</option>)}
+            </select>
+            <input
+              className="field"
+              minLength="12"
+              maxLength="360"
+              required
+              placeholder={userReview ? 'Actualiza tu resena' : 'Escribe una resena real y util'}
+              value={comment}
+              onChange={(event) => setComment(event.target.value)}
+            />
+          </div>
+          <button className="secondary-btn w-full" disabled={saving}>{saving ? 'Guardando...' : userReview ? 'Actualizar resena' : 'Publicar resena'}</button>
+        </form>
+      ) : (
+        <p className="border-t border-orange-100 pt-3 text-xs font-bold text-slate-500">Inicia sesion para dejar una resena. No se permiten enlaces, spam ni resenas falsas.</p>
+      )}
     </div>
   );
 }
@@ -983,6 +1366,25 @@ function MyListings({ listings, onOpen, onEdit, onSold, onDelete }) {
   );
 }
 
+function InfoPage({ page, onBack }) {
+  return (
+    <div className="mx-auto max-w-4xl space-y-5">
+      <section className="dark-panel p-6 md:p-8">
+        <button className="secondary-btn !border-white/10 !bg-white/10 !text-white" onClick={onBack}>
+          Volver al inicio
+        </button>
+        <p className="mt-8 text-xs font-black uppercase tracking-[0.16em] text-orange-200">{page.eyebrow}</p>
+        <h1 className="mt-3 text-4xl font-black tracking-tight md:text-6xl">{page.title}</h1>
+      </section>
+      <section className="panel space-y-4 p-5 md:p-7">
+        {page.body.map((paragraph) => (
+          <p key={paragraph} className="text-base leading-8 text-slate-600">{paragraph}</p>
+        ))}
+      </section>
+    </div>
+  );
+}
+
 function Profile({ user, profile, onSaved, onSignOut, setNotice }) {
   if (!isSupabaseConfigured) return <SetupWarning />;
   if (!user) return <AuthForm setNotice={setNotice} />;
@@ -1037,23 +1439,6 @@ function AuthForm({ setNotice }) {
       return;
     }
     setNotice('Sesion iniciada.', 'success');
-  }
-
-  async function signInWithGoogle() {
-    setSaving(true);
-    let result;
-    try {
-      result = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo: window.location.origin },
-      });
-    } catch (error) {
-      setSaving(false);
-      setNotice(error, 'error', 'login');
-      return;
-    }
-    setSaving(false);
-    if (result.error) setNotice(result.error, 'error', 'login');
   }
 
   if (verificationSent) {
@@ -1117,15 +1502,6 @@ function AuthForm({ setNotice }) {
         <div className="grid grid-cols-2 gap-2 rounded-3xl bg-slate-100 p-1">
           <button type="button" className={cx('rounded-2xl py-3 text-sm font-black transition', mode === 'login' && 'bg-white shadow-soft')} onClick={() => setMode('login')}>Login</button>
           <button type="button" className={cx('rounded-2xl py-3 text-sm font-black transition', mode === 'signup' && 'bg-white shadow-soft')} onClick={() => setMode('signup')}>Registro</button>
-        </div>
-        <button type="button" className="secondary-btn flex w-full items-center justify-center gap-3" onClick={signInWithGoogle} disabled={saving}>
-          <span className="grid h-6 w-6 place-items-center rounded-full bg-white text-sm font-black text-ink shadow-soft">G</span>
-          Continuar con Google
-        </button>
-        <div className="flex items-center gap-3 text-xs font-black uppercase tracking-[0.12em] text-slate-400">
-          <span className="h-px flex-1 bg-slate-200" />
-          <span>o con correo</span>
-          <span className="h-px flex-1 bg-slate-200" />
         </div>
         {mode === 'signup' && (
           <>
