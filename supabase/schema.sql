@@ -146,6 +146,7 @@ create index if not exists listings_seller_idx on public.listings(seller_id);
 create index if not exists listing_images_listing_idx on public.listing_images(listing_id);
 create index if not exists listing_reviews_listing_idx on public.listing_reviews(listing_id);
 create index if not exists listing_reviews_seller_idx on public.listing_reviews(seller_id);
+create unique index if not exists listing_reviews_listing_reviewer_idx on public.listing_reviews(listing_id, reviewer_id);
 
 create or replace function public.touch_updated_at()
 returns trigger
@@ -193,17 +194,19 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.users (id, email, full_name, whatsapp)
+  insert into public.users (id, email, full_name, whatsapp, role)
   values (
     new.id,
     new.email,
     new.raw_user_meta_data ->> 'full_name',
-    new.raw_user_meta_data ->> 'whatsapp'
+    new.raw_user_meta_data ->> 'whatsapp',
+    case when new.raw_user_meta_data ->> 'role' = 'seller' then 'seller'::public.user_role else 'user'::public.user_role end
   )
   on conflict (id) do update
-  set email = excluded.email,
+      set email = excluded.email,
       full_name = coalesce(public.users.full_name, excluded.full_name),
-      whatsapp = coalesce(public.users.whatsapp, excluded.whatsapp);
+      whatsapp = coalesce(public.users.whatsapp, excluded.whatsapp),
+      role = coalesce(public.users.role, excluded.role);
   return new;
 end;
 $$;
@@ -344,6 +347,13 @@ for update using (reviewer_id = auth.uid()) with check (
   and status = 'visible'
   and char_length(comment) between 12 and 360
   and comment !~* '(https?://|www\.|bit\.ly|wa\.me|t\.me)'
+  and exists (
+    select 1 from public.listings
+    where listings.id = listing_reviews.listing_id
+      and listings.seller_id = listing_reviews.seller_id
+      and listings.seller_id <> auth.uid()
+      and listings.status in ('active', 'sold')
+  )
 );
 
 drop policy if exists "Admins moderate listing reviews" on public.listing_reviews;

@@ -10,13 +10,23 @@ const currency = new Intl.NumberFormat('es-MX', {
 });
 
 const navItems = [
-  { id: 'explore', label: 'Explorar', icon: 'E' },
+  { id: 'explore', label: 'Publicaciones', icon: 'P' },
+  { id: 'profile', label: 'Perfil', icon: 'P' },
+];
+const sellerNavItems = [
+  { id: 'explore', label: 'Publicaciones', icon: 'P' },
   { id: 'create', label: 'Publicar', icon: '+' },
   { id: 'mine', label: 'Mias', icon: 'M' },
   { id: 'profile', label: 'Perfil', icon: 'P' },
 ];
 
 const QUICK_FACULTIES = ['FIME', 'FACPyA', 'FACDyC', 'Medicina', 'FAPSI', 'FARQ', 'Odontologia', 'FCQ'];
+const CAMPUS_GROUPS = [
+  { id: 'cu', label: 'CU', names: ['FIME', 'FACPyA', 'FACDyC', 'FCQ'] },
+  { id: 'agro', label: 'Agropecuarias', names: ['Agronomia', 'Medicina Veterinaria', 'Veterinaria'] },
+  { id: 'salud', label: 'Salud', names: ['Medicina', 'Odontologia'] },
+  { id: 'mederos', label: 'Mederos', names: ['FAPSI', 'FARQ'] },
+];
 const MAX_AVATAR_SIZE = 2 * 1024 * 1024;
 const FACULTY_BRANDS = {
   FIME: { color: '#006b4f', logo: '/faculties/fime.svg' },
@@ -165,6 +175,22 @@ function isSuspiciousReview(text) {
   );
 }
 
+function getNavigationItems(isSeller, isAdmin) {
+  const items = isSeller || isAdmin ? sellerNavItems : navItems;
+  return isAdmin ? [...items, { id: 'admin', label: 'Admin', icon: 'A' }] : items;
+}
+
+function getFacultyIdsByNames(faculties, names) {
+  return names
+    .map((name) => faculties.find((faculty) => faculty.name.toLowerCase() === name.toLowerCase())?.id)
+    .filter(Boolean);
+}
+
+function getSelectedFacultyIds(filters) {
+  if (filters.faculties?.length) return filters.faculties;
+  return filters.faculty ? [filters.faculty] : [];
+}
+
 function getErrorMessage(error, context = '') {
   if (error && typeof error === 'object' && !error.message && Object.keys(error).length === 0) {
     if (context === 'login') {
@@ -190,6 +216,9 @@ function getErrorMessage(error, context = '') {
   }
   if (message.toLowerCase().includes('public.listings') || message.toLowerCase().includes('schema cache')) {
     return 'Aun falta crear las tablas de Supabase. Ejecuta supabase/schema.sql en el SQL Editor; mientras tanto se muestran datos demo.';
+  }
+  if (message.toLowerCase().includes('listing_reviews') || message.toLowerCase().includes('violates row-level security')) {
+    return 'No se pudo guardar la resena. Ejecuta el supabase/schema.sql actualizado para crear permisos y tabla listing_reviews.';
   }
   if (message.toLowerCase().includes('bucket not found')) {
     return 'No existe el bucket de Storage. Ejecuta supabase/repair-current-project.sql en Supabase SQL Editor para crear el bucket avatars.';
@@ -233,6 +262,7 @@ function App() {
   const [filters, setFilters] = useState({
     q: '',
     faculty: '',
+    faculties: [],
     category: '',
     min: '',
     max: '',
@@ -242,6 +272,7 @@ function App() {
 
   const user = session?.user ?? null;
   const isAdmin = profile?.role === 'admin';
+  const isSeller = profile?.role === 'seller' || isAdmin;
 
   function notify(message, type = 'success', context = '') {
     setNotice({ message: getErrorMessage(message, context), type });
@@ -305,6 +336,7 @@ function App() {
           email: user.email,
           full_name: user.user_metadata?.full_name ?? '',
           whatsapp: user.user_metadata?.whatsapp ?? '',
+          role: user.user_metadata?.role === 'seller' ? 'seller' : 'user',
         })
         .select()
         .single();
@@ -374,7 +406,7 @@ function App() {
 
   function openFaculty(facultyId) {
     setSelectedFacultyId(facultyId);
-    setFilters((current) => ({ ...current, faculty: facultyId }));
+    setFilters((current) => ({ ...current, faculty: facultyId, faculties: [facultyId] }));
     setView('faculty');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -401,7 +433,11 @@ function App() {
       comment: comment.trim(),
       status: 'visible',
     };
-    const { error } = await supabase.from('listing_reviews').upsert(payload, { onConflict: 'listing_id,reviewer_id' });
+    const existingReviewId = getReviews(listing).find((review) => review.reviewer_id === user.id)?.id;
+    const result = existingReviewId
+      ? await supabase.from('listing_reviews').update(payload).eq('id', existingReviewId)
+      : await supabase.from('listing_reviews').insert(payload);
+    const { error } = result;
     if (error) {
       notify(error, 'error');
       return false;
@@ -413,9 +449,10 @@ function App() {
 
   const visibleListings = useMemo(() => {
     const term = filters.q.trim().toLowerCase();
+    const selectedFacultyIds = getSelectedFacultyIds(filters);
     return listings.filter((listing) => {
       const matchesSold = isAdmin || listing.status !== 'deleted';
-      const matchesFaculty = !filters.faculty || listing.faculty_id === filters.faculty;
+      const matchesFaculty = selectedFacultyIds.length === 0 || selectedFacultyIds.includes(listing.faculty_id);
       const matchesCategory = !filters.category || listing.category_id === filters.category;
       const matchesMin = !filters.min || Number(listing.price) >= Number(filters.min);
       const matchesMax = !filters.max || Number(listing.price) <= Number(filters.max);
@@ -458,7 +495,7 @@ function App() {
   return (
     <div className="min-h-screen pb-24 text-ink md:pb-10">
       <PromoTicker />
-      <Header user={user} profile={profile} view={view} onNavigate={setView} isAdmin={isAdmin} />
+      <Header user={user} profile={profile} view={view} onNavigate={setView} isAdmin={isAdmin} isSeller={isSeller} />
 
       {notice && (
         <button
@@ -501,7 +538,7 @@ function App() {
           )}
 
           {view === 'create' && (
-            <RequireAuth user={user} setView={setView}>
+            <RequireSeller user={user} isSeller={isSeller} setView={setView}>
               <ListingForm
                 user={user}
                 faculties={faculties}
@@ -514,11 +551,11 @@ function App() {
                 }}
                 setNotice={notify}
               />
-            </RequireAuth>
+            </RequireSeller>
           )}
 
           {view === 'mine' && (
-            <RequireAuth user={user} setView={setView}>
+            <RequireSeller user={user} isSeller={isSeller} setView={setView}>
               <MyListings
                 listings={myListings}
                 onOpen={setSelectedListing}
@@ -529,7 +566,7 @@ function App() {
                 onSold={markSold}
                 onDelete={deleteListing}
               />
-            </RequireAuth>
+            </RequireSeller>
           )}
 
           {view === 'profile' && (
@@ -569,15 +606,17 @@ function App() {
         </section>
       </main>
 
-      <button
-        className="fixed bottom-24 right-5 z-30 grid h-14 w-14 place-items-center rounded-full border border-white/20 bg-white/10 text-3xl font-light text-white shadow-ios backdrop-blur-2xl md:hidden"
-        onClick={() => setView(user ? 'create' : 'profile')}
-        aria-label="Crear publicacion"
-      >
-        +
-      </button>
+      {isSeller && (
+        <button
+          className="fixed bottom-24 right-5 z-30 grid h-14 w-14 place-items-center rounded-full border border-white/20 bg-white/10 text-3xl font-light text-white shadow-ios backdrop-blur-2xl md:hidden"
+          onClick={() => setView(user ? 'create' : 'profile')}
+          aria-label="Crear publicacion"
+        >
+          +
+        </button>
+      )}
 
-      <MobileNav view={view} setView={setView} isAdmin={isAdmin} />
+      <MobileNav view={view} setView={setView} isAdmin={isAdmin} isSeller={isSeller} />
 
       {selectedListing && (
         <ListingDetail
@@ -606,8 +645,8 @@ function PromoTicker() {
   );
 }
 
-function Header({ user, profile, view, onNavigate, isAdmin }) {
-  const items = isAdmin ? [...navItems, { id: 'admin', label: 'Admin', icon: 'A' }] : navItems;
+function Header({ user, profile, view, onNavigate, isAdmin, isSeller }) {
+  const items = getNavigationItems(isSeller, isAdmin);
   const displayName = user ? profile?.full_name?.split(' ')[0] ?? user.email?.split('@')[0] ?? 'Perfil' : 'Invitado';
   const avatar = profile?.avatar_url;
 
@@ -642,8 +681,8 @@ function Header({ user, profile, view, onNavigate, isAdmin }) {
           ))}
         </nav>
 
-        <button className="hidden justify-self-end rounded-3xl border border-white/20 bg-white px-4 py-3 text-sm font-black text-ink shadow-soft transition active:scale-[0.98] md:inline-flex" onClick={() => onNavigate(user ? 'create' : 'profile')}>
-          Publicar
+        <button className="hidden justify-self-end rounded-3xl border border-white/20 bg-white px-4 py-3 text-sm font-black text-ink shadow-soft transition active:scale-[0.98] md:inline-flex" onClick={() => onNavigate(isSeller ? 'create' : 'explore')}>
+          {isSeller ? 'Publicar' : 'Ver publicaciones'}
         </button>
 
         <button className="absolute right-5 top-5 rounded-full bg-orange-100 px-3 py-1 text-xs font-black text-campus md:hidden" onClick={() => onNavigate('explore')}>
@@ -672,11 +711,11 @@ function Sidebar({ view, setView, isAdmin }) {
   );
 }
 
-function MobileNav({ view, setView, isAdmin }) {
-  const items = isAdmin ? [...navItems, { id: 'admin', label: 'Admin', icon: 'A' }] : navItems;
+function MobileNav({ view, setView, isAdmin, isSeller }) {
+  const items = getNavigationItems(isSeller, isAdmin);
   return (
     <nav className="safe-bottom fixed bottom-0 left-0 right-0 z-40 px-3 pb-3 md:hidden">
-      <div className={cx('liquid mx-auto grid max-w-md gap-1 rounded-[26px] p-1.5', isAdmin ? 'grid-cols-5' : 'grid-cols-4')}>
+      <div className={cx('liquid mx-auto grid max-w-md gap-1 rounded-[26px] p-1.5', items.length === 5 ? 'grid-cols-5' : items.length === 4 ? 'grid-cols-4' : 'grid-cols-2')}>
         {items.map((item) => (
           <button
             key={item.id}
@@ -703,14 +742,16 @@ function SetupWarning() {
 
 function Explore({ loading, listings, filters, setFilters, faculties, categories, onOpen, onOpenFaculty, setView }) {
   const sellerCount = new Set(listings.map((listing) => listing.seller_id)).size;
+  const jumpToListings = () => window.setTimeout(() => document.getElementById('listings-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
 
   return (
     <div className="space-y-5">
       <FacultyTags faculties={faculties} selectedFaculty={filters.faculty} onOpenFaculty={onOpenFaculty} />
-      <HeroCarousel />
-      <FeaturedCategories categories={categories} setFilters={setFilters} />
+      <HeroCarousel onVisit={jumpToListings} />
+      <FeaturedCategories categories={categories} setFilters={setFilters} onSelect={jumpToListings} />
       <Filters filters={filters} setFilters={setFilters} faculties={faculties} categories={categories} />
 
+      <div id="listings-section" className="scroll-mt-28" />
       {loading ? (
         <div className="panel p-8 text-center font-semibold text-slate-500">Cargando publicaciones...</div>
       ) : listings.length === 0 ? (
@@ -730,7 +771,7 @@ function Explore({ loading, listings, filters, setFilters, faculties, categories
   );
 }
 
-function HeroCarousel() {
+function HeroCarousel({ onVisit }) {
   const [active, setActive] = useState(0);
 
   useEffect(() => {
@@ -755,7 +796,7 @@ function HeroCarousel() {
             {slide.title}
           </h1>
           <p className="mt-5 max-w-lg text-xl font-semibold leading-8 drop-shadow md:text-2xl">{slide.text}</p>
-          <button className="mt-6 rounded-full bg-orange-500 px-10 py-3 text-sm font-black text-white shadow-ios transition hover:bg-orange-600">
+          <button className="mt-6 rounded-full bg-orange-500 px-10 py-3 text-sm font-black text-white shadow-ios transition hover:bg-orange-600" onClick={onVisit}>
             Visitar tiendas
           </button>
         </div>
@@ -778,7 +819,7 @@ function HeroCarousel() {
   );
 }
 
-function FeaturedCategories({ categories, setFilters }) {
+function FeaturedCategories({ categories, setFilters, onSelect }) {
   const cards = FEATURED_CATEGORIES.map((item) => ({
     ...item,
     category: categories.find((category) => category.name.toLowerCase() === item.name.toLowerCase()),
@@ -791,7 +832,11 @@ function FeaturedCategories({ categories, setFilters }) {
           key={title}
           className="group overflow-hidden rounded-[16px] bg-[#eeeeF4] p-6 text-left shadow-soft transition hover:-translate-y-1 hover:shadow-ios"
           type="button"
-          onClick={() => category && setFilters((current) => ({ ...current, category: category.id }))}
+          onClick={() => {
+            if (!category) return;
+            setFilters((current) => ({ ...current, category: category.id }));
+            onSelect();
+          }}
         >
           <div className="flex h-72 items-center justify-center">
             <img src={image} alt="" className="max-h-full w-full object-contain transition group-hover:scale-105" />
@@ -848,6 +893,18 @@ function FacultyTags({ faculties, selectedFaculty, onOpenFaculty }) {
 
 function Filters({ filters, setFilters, faculties, categories }) {
   const update = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
+  const selectedFacultyIds = getSelectedFacultyIds(filters);
+  const setSelectedFaculties = (ids) => setFilters((current) => ({ ...current, faculty: ids[0] ?? '', faculties: ids }));
+  const toggleFaculty = (facultyId) => {
+    const nextIds = selectedFacultyIds.includes(facultyId)
+      ? selectedFacultyIds.filter((id) => id !== facultyId)
+      : [...selectedFacultyIds, facultyId];
+    setSelectedFaculties(nextIds);
+  };
+  const applyCampus = (campus) => {
+    const ids = getFacultyIdsByNames(faculties, campus.names);
+    setSelectedFaculties(ids);
+  };
   const quickFaculties = QUICK_FACULTIES.map((name) => {
     const aliases = name === 'FAPSI' ? ['FAPSI', 'Psicologia'] : [name];
     return {
@@ -861,18 +918,32 @@ function Filters({ filters, setFilters, faculties, categories }) {
       {quickFaculties.length > 0 && (
         <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
           <button
-            className={cx('chip', !filters.faculty && 'chip-active')}
+            className={cx('chip', selectedFacultyIds.length === 0 && 'chip-active')}
             type="button"
-            onClick={() => update('faculty', '')}
+            onClick={() => setSelectedFaculties([])}
           >
             Todas
           </button>
+          {CAMPUS_GROUPS.map((campus) => {
+            const ids = getFacultyIdsByNames(faculties, campus.names);
+            const isActive = ids.length > 0 && ids.every((id) => selectedFacultyIds.includes(id));
+            return (
+              <button
+                key={campus.id}
+                className={cx('chip', isActive && 'chip-active')}
+                type="button"
+                onClick={() => applyCampus(campus)}
+              >
+                {campus.label}
+              </button>
+            );
+          })}
           {quickFaculties.map(({ name, faculty }) => (
             <button
               key={faculty.id}
-              className={cx('chip', filters.faculty === faculty.id && 'chip-active')}
+              className={cx('chip', selectedFacultyIds.includes(faculty.id) && 'chip-active')}
               type="button"
-              onClick={() => update('faculty', faculty.id)}
+              onClick={() => toggleFaculty(faculty.id)}
             >
               {name}
             </button>
@@ -881,7 +952,7 @@ function Filters({ filters, setFilters, faculties, categories }) {
       )}
       <input className="field" placeholder="Buscar libros, calculadora, comida, asesorias..." value={filters.q} onChange={(event) => update('q', event.target.value)} />
       <div className="grid gap-3 md:grid-cols-[1.1fr_1.1fr_0.8fr_0.8fr]">
-        <select className="field" value={filters.faculty} onChange={(event) => update('faculty', event.target.value)}>
+        <select className="field" value={selectedFacultyIds[0] ?? ''} onChange={(event) => setSelectedFaculties(event.target.value ? [event.target.value] : [])}>
           <option value="">Todas las facultades</option>
           {faculties.map((faculty) => (
             <option key={faculty.id} value={faculty.id}>
@@ -982,7 +1053,7 @@ function SellerJoin({ sellerCount, listingCount, setView, setFilters }) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   const visitStores = () => {
-    setFilters((current) => ({ ...current, faculty: '', category: '', q: '', min: '', max: '' }));
+    setFilters((current) => ({ ...current, faculty: '', faculties: [], category: '', q: '', min: '', max: '' }));
     go('explore');
   };
 
@@ -1235,6 +1306,19 @@ function RequireAuth({ user, setView, children }) {
   );
 }
 
+function RequireSeller({ user, isSeller, setView, children }) {
+  if (!user) return <RequireAuth user={user} setView={setView}>{children}</RequireAuth>;
+  if (isSeller) return children;
+  return (
+    <div className="panel mx-auto max-w-xl p-8 text-center">
+      <p className="label">Cuenta cliente</p>
+      <h2 className="mt-2 text-2xl font-black">Esta seccion es para vendedores.</h2>
+      <p className="mt-2 text-sm leading-6 text-slate-500">Entra como vendedor desde el login o perfil para publicar y gestionar tus productos.</p>
+      <button className="primary-btn mt-5" onClick={() => setView('explore')}>Ver publicaciones</button>
+    </div>
+  );
+}
+
 function ListingForm({ user, faculties, categories, editing, onDone, setNotice }) {
   const [form, setForm] = useState(editing ?? EMPTY_LISTING);
   const [files, setFiles] = useState([]);
@@ -1400,6 +1484,7 @@ function AuthForm({ setNotice }) {
   const [fullName, setFullName] = useState('');
   const [phoneCode, setPhoneCode] = useState('52');
   const [phone, setPhone] = useState('');
+  const [accountRole, setAccountRole] = useState('user');
   const [saving, setSaving] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
   const [showMailHelp, setShowMailHelp] = useState(false);
@@ -1424,7 +1509,7 @@ function AuthForm({ setNotice }) {
           : await supabase.auth.signUp({
               email,
               password,
-              options: { data: { full_name: fullName, whatsapp: `${phoneCode}${normalizedPhone}` } },
+              options: { data: { full_name: fullName, whatsapp: `${phoneCode}${normalizedPhone}`, role: accountRole } },
             });
     } catch (error) {
       setSaving(false);
@@ -1433,7 +1518,23 @@ function AuthForm({ setNotice }) {
     }
     setSaving(false);
     if (result.error) return setNotice(result.error, 'error', mode);
+    if (result.data?.user) {
+      const profilePayload = {
+        id: result.data.user.id,
+        email: result.data.user.email ?? email,
+        role: accountRole,
+      };
+      if (mode === 'signup') {
+        profilePayload.full_name = fullName;
+        profilePayload.whatsapp = `${phoneCode}${normalizedPhone}`;
+      }
+      await supabase.from('users').upsert(profilePayload);
+    }
     if (mode === 'signup') {
+      if (result.data?.session) {
+        setNotice(accountRole === 'seller' ? 'Cuenta de vendedor creada.' : 'Cuenta de cliente creada.', 'success');
+        return;
+      }
       setVerificationSent(true);
       setShowMailHelp(false);
       return;
@@ -1502,6 +1603,10 @@ function AuthForm({ setNotice }) {
         <div className="grid grid-cols-2 gap-2 rounded-3xl bg-slate-100 p-1">
           <button type="button" className={cx('rounded-2xl py-3 text-sm font-black transition', mode === 'login' && 'bg-white shadow-soft')} onClick={() => setMode('login')}>Login</button>
           <button type="button" className={cx('rounded-2xl py-3 text-sm font-black transition', mode === 'signup' && 'bg-white shadow-soft')} onClick={() => setMode('signup')}>Registro</button>
+        </div>
+        <div className="grid grid-cols-2 gap-2 rounded-3xl bg-orange-50 p-1">
+          <button type="button" className={cx('rounded-2xl py-3 text-sm font-black transition', accountRole === 'user' && 'bg-white text-campus shadow-soft')} onClick={() => setAccountRole('user')}>Cliente</button>
+          <button type="button" className={cx('rounded-2xl py-3 text-sm font-black transition', accountRole === 'seller' && 'bg-white text-campus shadow-soft')} onClick={() => setAccountRole('seller')}>Vendedor</button>
         </div>
         {mode === 'signup' && (
           <>
