@@ -38,6 +38,15 @@ const HERO_SLIDES = [
   { title: 'Compra dentro de la UANL', text: 'Filtra por facultad y acuerda entrega directa por WhatsApp.', faculty: 'UANL', image: '/campus/hero-campus.svg' },
   { title: 'Vende entre clases', text: 'Publica comida, bebidas, postres, libros o servicios en minutos.', faculty: 'Campus', image: '/campus/hero-vendedores.svg' },
 ];
+const PHONE_CODES = [
+  { label: '🇲🇽 +52', value: '52', country: 'Mexico' },
+  { label: '🇺🇸 +1', value: '1', country: 'Estados Unidos' },
+  { label: '🇨🇦 +1', value: '1', country: 'Canada' },
+  { label: '🇨🇴 +57', value: '57', country: 'Colombia' },
+  { label: '🇦🇷 +54', value: '54', country: 'Argentina' },
+  { label: '🇨🇱 +56', value: '56', country: 'Chile' },
+  { label: '🇪🇸 +34', value: '34', country: 'Espana' },
+];
 
 function cx(...classes) {
   return classes.filter(Boolean).join(' ');
@@ -49,7 +58,7 @@ function normalizePhone(phone) {
 
 function getErrorMessage(error) {
   if (error && typeof error === 'object' && !error.message && Object.keys(error).length === 0) {
-    return 'No se pudo completar la accion. Revisa que Supabase Auth y las variables VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY esten configuradas correctamente.';
+    return 'No se pudo completar la accion. Revisa que Supabase Auth este activo, que las variables VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY sean correctas y ejecuta supabase/repair-current-project.sql.';
   }
   const message = String(error?.message ?? error?.error_description ?? error ?? '');
   if (message === '{}' || message === '[object Object]') {
@@ -100,6 +109,12 @@ function App() {
   function notify(message, type = 'success') {
     setNotice({ message: getErrorMessage(message), type });
   }
+
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = window.setTimeout(() => setNotice(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -933,14 +948,26 @@ function AuthForm({ setNotice }) {
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [fullName, setFullName] = useState('');
-  const [whatsapp, setWhatsapp] = useState('');
+  const [phoneCode, setPhoneCode] = useState('52');
+  const [phone, setPhone] = useState('');
   const [saving, setSaving] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
   const [showMailHelp, setShowMailHelp] = useState(false);
 
   async function submit(event) {
     event.preventDefault();
+    const normalizedPhone = phone.replace(/\D/g, '');
+    if (mode === 'signup' && password !== confirmPassword) {
+      setNotice('Las contrasenas no coinciden.', 'error');
+      return;
+    }
+    if (mode === 'signup' && normalizedPhone.length !== 10) {
+      setNotice('El telefono debe tener exactamente 10 digitos.', 'error');
+      return;
+    }
     setSaving(true);
     const result =
       mode === 'login'
@@ -948,7 +975,7 @@ function AuthForm({ setNotice }) {
         : await supabase.auth.signUp({
             email,
             password,
-            options: { data: { full_name: fullName, whatsapp } },
+            options: { data: { full_name: fullName, whatsapp: `${phoneCode}${normalizedPhone}` } },
           });
     setSaving(false);
     if (result.error) return setNotice(result.error, 'error');
@@ -1019,11 +1046,44 @@ function AuthForm({ setNotice }) {
         {mode === 'signup' && (
           <>
             <input className="field" required placeholder="Nombre completo" value={fullName} onChange={(event) => setFullName(event.target.value)} />
-            <input className="field" placeholder="WhatsApp" value={whatsapp} onChange={(event) => setWhatsapp(event.target.value)} />
+            <div className="grid grid-cols-[8.5rem_1fr] gap-2">
+              <select className="field" value={phoneCode} onChange={(event) => setPhoneCode(event.target.value)} aria-label="Lada">
+                {PHONE_CODES.map((code) => (
+                  <option key={`${code.country}-${code.value}`} value={code.value}>
+                    {code.label}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="field"
+                required
+                inputMode="numeric"
+                maxLength="10"
+                placeholder="WhatsApp 10 digitos"
+                value={phone}
+                onChange={(event) => setPhone(event.target.value.replace(/\D/g, '').slice(0, 10))}
+              />
+            </div>
           </>
         )}
         <input className="field" required type="email" placeholder="Correo UANL o personal" value={email} onChange={(event) => setEmail(event.target.value)} />
-        <input className="field" required type="password" minLength="6" placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} />
+        <div className="grid grid-cols-[1fr_auto] gap-2">
+          <input className="field" required type={showPassword ? 'text' : 'password'} minLength="6" placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} />
+          <button className="secondary-btn !px-4" type="button" onClick={() => setShowPassword((current) => !current)}>
+            {showPassword ? 'Ocultar' : 'Ver'}
+          </button>
+        </div>
+        {mode === 'signup' && (
+          <input
+            className="field"
+            required
+            type={showPassword ? 'text' : 'password'}
+            minLength="6"
+            placeholder="Repetir password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+          />
+        )}
         <button className="primary-btn w-full" disabled={saving}>{saving ? 'Procesando...' : mode === 'login' ? 'Entrar' : 'Crear cuenta'}</button>
       </form>
     </div>
