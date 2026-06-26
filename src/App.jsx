@@ -64,6 +64,9 @@ function getErrorMessage(error) {
   if (message.toLowerCase().includes('bucket not found')) {
     return 'No existe el bucket de Storage. Ejecuta supabase/repair-current-project.sql en Supabase SQL Editor para crear el bucket avatars.';
   }
+  if (message.toLowerCase().includes('listings_description_check')) {
+    return 'La descripcion debe tener al menos 10 caracteres.';
+  }
   return message || 'Ocurrio un error inesperado.';
 }
 
@@ -801,6 +804,10 @@ function ListingForm({ user, faculties, categories, editing, onDone, setNotice }
 
   async function saveListing(event) {
     event.preventDefault();
+    if (form.description.trim().length < 10) {
+      setNotice('La descripcion debe tener al menos 10 caracteres.', 'error');
+      return;
+    }
     setSaving(true);
 
     const payload = {
@@ -851,7 +858,7 @@ function ListingForm({ user, faculties, categories, editing, onDone, setNotice }
         <h1 className="mt-2 text-3xl font-black">Publica para tu facultad</h1>
       </div>
       <input className="field" required placeholder="Titulo" value={form.title} onChange={(event) => update('title', event.target.value)} />
-      <textarea className="field min-h-32" required placeholder="Descripcion, estado, punto de entrega..." value={form.description} onChange={(event) => update('description', event.target.value)} />
+      <textarea className="field min-h-32" required minLength="10" placeholder="Descripcion, estado, punto de entrega..." value={form.description} onChange={(event) => update('description', event.target.value)} />
       <div className="grid gap-3 md:grid-cols-3">
         <input className="field" required type="number" min="0" placeholder="Precio MXN" value={form.price} onChange={(event) => update('price', event.target.value)} />
         <select className="field" required value={form.faculty_id} onChange={(event) => update('faculty_id', event.target.value)}>
