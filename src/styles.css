@@ -14,11 +14,14 @@
 html {
   min-height: 100%;
   background: #fffaf4;
+  color-scheme: light;
 }
 
 body {
   min-height: 100vh;
+  min-height: 100dvh;
   margin: 0;
+  padding-top: env(safe-area-inset-top);
   color: #f8fafc;
   background:
     linear-gradient(180deg, #fffaf4 0%, #ffffff 32%, #fff7ed 100%);
@@ -48,7 +51,7 @@ textarea {
 }
 
 .safe-bottom {
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: max(env(safe-area-inset-bottom), 0.75rem);
 }
 
 .no-scrollbar::-webkit-scrollbar {

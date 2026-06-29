@@ -60,12 +60,12 @@ const products = [
 ];
 
 const imageByType = {
-  drink: '/carousel/slide-bebidas.svg',
-  food: '/carousel/slide-comidas.svg',
-  dessert: '/carousel/slide-postres.svg',
-  tech: '/carousel/slide-tech.svg',
-  book: '/carousel/slide-libros.svg',
-  service: '/carousel/slide-servicios.svg',
+  drink: '/carousel/slide-bebidas.jpg',
+  food: '/carousel/slide-comidas.jpg',
+  dessert: '/carousel/slide-postres.jpg',
+  tech: '/carousel/slide-tech.jpg',
+  book: '/carousel/slide-libros.jpg',
+  service: '/carousel/slide-servicios.jpg',
 };
 
 export const DEMO_LISTINGS = products.map(([title, category, faculty, price, description, type], index) => {

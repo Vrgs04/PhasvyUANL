@@ -10,11 +10,11 @@ const currency = new Intl.NumberFormat('es-MX', {
 });
 
 const navItems = [
-  { id: 'explore', label: 'Publicaciones', icon: 'P' },
+  { id: 'catalog', label: 'Publicaciones', icon: 'P' },
   { id: 'profile', label: 'Perfil', icon: 'P' },
 ];
 const sellerNavItems = [
-  { id: 'explore', label: 'Publicaciones', icon: 'P' },
+  { id: 'catalog', label: 'Publicaciones', icon: 'P' },
   { id: 'create', label: 'Publicar', icon: '+' },
   { id: 'mine', label: 'Mias', icon: 'M' },
   { id: 'profile', label: 'Perfil', icon: 'P' },
@@ -22,34 +22,34 @@ const sellerNavItems = [
 
 const QUICK_FACULTIES = ['FIME', 'FACPyA', 'FACDyC', 'Medicina', 'FAPSI', 'FARQ', 'Odontologia', 'FCQ'];
 const CAMPUS_GROUPS = [
-  { id: 'cu', label: 'Ciudad Universitaria', shortLabel: 'CU', names: ['FIME', 'FACPyA', 'FACDyC', 'FCQ', 'FCFM', 'Ciencias Biologicas'], image: '/campus/campus-cu.svg', logo: '/faculties/uanl.svg' },
+  { id: 'cu', label: 'Ciudad Universitaria', shortLabel: 'CU', names: ['FIME', 'FACPyA', 'FACDyC', 'FCQ', 'FCFM', 'Ciencias Biologicas'], image: '/campus/campus-cu.jpg', logo: '/faculties/uanl.jpg' },
   { id: 'agro', label: 'Agropecuarias', names: ['Agronomia', 'Medicina Veterinaria', 'Veterinaria'] },
-  { id: 'salud', label: 'Medicina', shortLabel: 'Medicina', names: ['Medicina', 'Odontologia'], image: '/campus/campus-medicina.svg', logo: '/faculties/medicina.svg' },
-  { id: 'mederos', label: 'Mederos', shortLabel: 'Mederos', names: ['FAPSI', 'FARQ', 'Filosofia y Letras'], image: '/campus/campus-mederos.svg', logo: '/faculties/uanl.svg' },
+  { id: 'salud', label: 'Medicina', shortLabel: 'Medicina', names: ['Medicina', 'Odontologia'], image: '/campus/campus-medicina.jpg', logo: '/faculties/medicina.jpg' },
+  { id: 'mederos', label: 'Mederos', shortLabel: 'Mederos', names: ['FAPSI', 'FARQ', 'Filosofia y Letras'], image: '/campus/campus-mederos.jpg', logo: '/faculties/uanl.jpg' },
 ];
 const FEATURED_CAMPUSES = CAMPUS_GROUPS.filter((campus) => campus.image);
 const MAX_AVATAR_SIZE = 2 * 1024 * 1024;
 const MAX_LISTING_IMAGE_SIZE = 5 * 1024 * 1024;
 const MAX_LISTING_IMAGES = 8;
 const FACULTY_BRANDS = {
-  FIME: { color: '#006b4f', logo: '/faculties/fime.svg' },
-  FACPyA: { color: '#0f5ea8', logo: '/faculties/facpya.svg' },
-  FACDyC: { color: '#7c2d12', logo: '/faculties/facdyc.svg' },
-  Medicina: { color: '#b91c1c', logo: '/faculties/medicina.svg' },
-  FAPSI: { color: '#7c3aed', logo: '/faculties/fapsi.svg' },
-  FARQ: { color: '#334155', logo: '/faculties/farq.svg' },
-  Odontologia: { color: '#0891b2', logo: '/faculties/odontologia.svg' },
-  FCQ: { color: '#15803d', logo: '/faculties/fcq.svg' },
+  FIME: { color: '#006b4f', logo: '/faculties/fime.jpg' },
+  FACPyA: { color: '#0f5ea8', logo: '/faculties/facpya.jpg' },
+  FACDyC: { color: '#7c2d12', logo: '/faculties/facdyc.jpg' },
+  Medicina: { color: '#b91c1c', logo: '/faculties/medicina.jpg' },
+  FAPSI: { color: '#7c3aed', logo: '/faculties/fapsi.jpg' },
+  FARQ: { color: '#334155', logo: '/faculties/farq.jpg' },
+  Odontologia: { color: '#0891b2', logo: '/faculties/odontologia.jpg' },
+  FCQ: { color: '#15803d', logo: '/faculties/fcq.jpg' },
 };
 const FEATURED_CATEGORIES = [
-  { name: 'Comidas', title: 'Comidas', text: 'Busca lo que estan vendiendo ahora mismo en tu facultad.', image: '/categories/comidas.svg' },
-  { name: 'Bebidas', title: 'Refrescos', text: 'Encuentra bebidas frias, aguas preparadas y cafe entre clases.', image: '/categories/refrescos.svg' },
-  { name: 'Postres', title: 'Pan de dulce', text: 'Antojos, brownies y postres hechos por alumnos.', image: '/categories/postres.svg' },
+  { name: 'Comidas', title: 'Comidas', text: 'Busca lo que estan vendiendo ahora mismo en tu facultad.', image: '/categories/comidas.jpg' },
+  { name: 'Bebidas', title: 'Refrescos', text: 'Encuentra bebidas frias, aguas preparadas y cafe entre clases.', image: '/categories/refrescos.jpg' },
+  { name: 'Postres', title: 'Pan de dulce', text: 'Antojos, brownies y postres hechos por alumnos.', image: '/categories/postres.jpg' },
 ];
 const HERO_SLIDES = [
-  { title: '¿Tienes hambre?', text: 'Encuentra productos que se estan vendiendo ahora mismo en FIME.', faculty: 'FIME', image: '/campus/hero-fime.svg' },
-  { title: 'Compra dentro de la UANL', text: 'Filtra por facultad y acuerda entrega directa por WhatsApp.', faculty: 'UANL', image: '/campus/hero-campus.svg' },
-  { title: 'Vende entre clases', text: 'Publica comida, bebidas, postres, libros o servicios en minutos.', faculty: 'Campus', image: '/campus/hero-vendedores.svg' },
+  { title: '¿Tienes hambre?', text: 'Encuentra productos que se estan vendiendo ahora mismo en FIME.', faculty: 'FIME', image: '/campus/hero-fime.jpg' },
+  { title: 'Compra dentro de la UANL', text: 'Filtra por facultad y acuerda entrega directa por WhatsApp.', faculty: 'UANL', image: '/campus/hero-campus.jpg' },
+  { title: 'Vende entre clases', text: 'Publica comida, bebidas, postres, libros o servicios en minutos.', faculty: 'Campus', image: '/campus/hero-vendedores.jpg' },
 ];
 const PHONE_CODES = [
   { id: 'MX', label: '🇲🇽 +52', value: '52', country: 'Mexico' },
@@ -431,7 +431,13 @@ function App() {
     }
     setSelectedFacultyId(facultyId);
     setFilters((current) => ({ ...current, faculties: [facultyId] }));
-    setView('faculty');
+    setView('catalog');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function navigate(nextView) {
+    if (nextView === 'catalog') setFilters(createEmptyFilters());
+    setView(nextView);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -519,7 +525,7 @@ function App() {
   return (
     <div className="min-h-screen pb-24 text-ink md:pb-10">
       <PromoTicker />
-      <Header user={user} profile={profile} view={view} onNavigate={setView} isAdmin={isAdmin} isSeller={isSeller} />
+      <Header user={user} profile={profile} view={view} onNavigate={navigate} isAdmin={isAdmin} isSeller={isSeller} />
 
       {notice && (
         <button
@@ -539,6 +545,20 @@ function App() {
 
           {view === 'explore' && (
             <Explore
+              listings={listings.filter((listing) => listing.status !== 'deleted')}
+              filters={filters}
+              setFilters={setFilters}
+              faculties={faculties}
+              categories={categories}
+              onOpenFaculty={openFaculty}
+              setView={setView}
+              user={user}
+            />
+          )}
+
+          {view === 'catalog' && (
+            <CatalogView
+              user={user}
               loading={loading}
               listings={visibleListings}
               filters={filters}
@@ -546,9 +566,8 @@ function App() {
               faculties={faculties}
               categories={categories}
               onOpen={setSelectedListing}
-              onOpenFaculty={openFaculty}
-              setView={setView}
-              user={user}
+              onBack={() => setView('explore')}
+              onLogin={() => setView('profile')}
             />
           )}
 
@@ -642,7 +661,7 @@ function App() {
         </button>
       )}
 
-      <MobileNav view={view} setView={setView} isAdmin={isAdmin} isSeller={isSeller} />
+      <MobileNav view={view} setView={navigate} isAdmin={isAdmin} isSeller={isSeller} />
 
       {user && selectedListing && (
         <ListingDetail
@@ -707,8 +726,8 @@ function Header({ user, profile, view, onNavigate, isAdmin, isSeller }) {
           ))}
         </nav>
 
-        <button className="hidden justify-self-end rounded-3xl border border-white/20 bg-white px-4 py-3 text-sm font-black text-ink shadow-soft transition active:scale-[0.98] md:inline-flex" onClick={() => onNavigate(!user ? 'profile' : isSeller ? 'create' : 'explore')}>
-          {!user ? 'Iniciar sesion' : isSeller ? 'Publicar' : 'Ver publicaciones'}
+        <button className="hidden justify-self-end rounded-3xl border border-white/20 bg-white px-4 py-3 text-sm font-black text-ink shadow-soft transition active:scale-[0.98] md:inline-flex" onClick={() => onNavigate(!user ? 'profile' : 'catalog')}>
+          {!user ? 'Iniciar sesion' : 'Ver publicaciones'}
         </button>
 
         <button className="absolute right-5 top-5 rounded-full bg-orange-100 px-3 py-1 text-xs font-black text-campus md:hidden" onClick={() => onNavigate(user ? 'explore' : 'profile')}>
@@ -741,7 +760,7 @@ function MobileNav({ view, setView, isAdmin, isSeller }) {
   const items = getNavigationItems(isSeller, isAdmin);
   return (
     <nav className="safe-bottom fixed bottom-0 left-0 right-0 z-40 px-3 pb-3 md:hidden">
-      <div className={cx('liquid mx-auto grid max-w-md gap-1 rounded-[26px] p-1.5', items.length === 5 ? 'grid-cols-5' : items.length === 4 ? 'grid-cols-4' : 'grid-cols-2')}>
+      <div className={cx('liquid mx-auto grid max-w-md gap-1 rounded-[26px] p-1.5', items.length === 5 ? 'grid-cols-5' : items.length === 4 ? 'grid-cols-4' : items.length === 3 ? 'grid-cols-3' : 'grid-cols-2')}>
         {items.map((item) => (
           <button
             key={item.id}
@@ -766,15 +785,15 @@ function SetupWarning() {
   );
 }
 
-function Explore({ loading, listings, filters, setFilters, faculties, categories, onOpen, onOpenFaculty, setView, user }) {
+function Explore({ listings, filters, setFilters, faculties, categories, onOpenFaculty, setView, user }) {
   const sellerCount = new Set(listings.map((listing) => listing.seller_id)).size;
-  const jumpToListings = () => window.setTimeout(() => document.getElementById('listings-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
-  const openLoginOrListings = () => {
+  const openCatalog = () => {
     if (!user) {
       setView('profile');
       return;
     }
-    jumpToListings();
+    setView('catalog');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   const applyCampus = (campus) => {
     if (!user) {
@@ -782,36 +801,93 @@ function Explore({ loading, listings, filters, setFilters, faculties, categories
       return;
     }
     setFilters((current) => ({ ...current, faculties: getFacultyIdsByNames(faculties, campus.names) }));
-    jumpToListings();
+    setView('catalog');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
     <div className="space-y-5">
+      <IOSInstallPrompt />
       <CampusTags onSelect={applyCampus} />
       <FacultyTags faculties={faculties} selectedFaculties={filters.faculties} onOpenFaculty={onOpenFaculty} />
-      <HeroCarousel onVisit={openLoginOrListings} />
-      <FeaturedCategories categories={categories} setFilters={setFilters} onSelect={openLoginOrListings} />
-      {user && <Filters filters={filters} setFilters={setFilters} faculties={faculties} categories={categories} />}
+      <HeroCarousel onVisit={() => {
+        setFilters(createEmptyFilters());
+        openCatalog();
+      }} />
+      <FeaturedCategories categories={categories} setFilters={setFilters} onSelect={openCatalog} />
+      <SellerJoin sellerCount={sellerCount} listingCount={listings.length} setView={setView} setFilters={setFilters} />
+    </div>
+  );
+}
 
-      <div id="listings-section" className="scroll-mt-28" />
-      {!user ? (
-        <LoginGate onLogin={() => setView('profile')} />
-      ) : loading ? (
+function CatalogView({ user, loading, listings, filters, setFilters, faculties, categories, onOpen, onBack, onLogin }) {
+  if (!user) return <LoginGate onLogin={onLogin} />;
+
+  return (
+    <div className="space-y-5">
+      <section className="panel flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between md:p-7">
+        <div>
+          <p className="label">Marketplace UANL</p>
+          <h1 className="mt-2 text-3xl font-black md:text-4xl">Todas las publicaciones</h1>
+          <p className="mt-2 text-sm text-slate-500">Busca y filtra productos por categoría y facultad.</p>
+        </div>
+        <button className="secondary-btn" type="button" onClick={onBack}>Volver al inicio</button>
+      </section>
+
+      <Filters filters={filters} setFilters={setFilters} faculties={faculties} categories={categories} />
+
+      {loading ? (
         <div className="panel p-8 text-center font-semibold text-slate-500">Cargando publicaciones...</div>
       ) : listings.length === 0 ? (
         <div className="panel p-8 text-center">
           <p className="font-black">No hay publicaciones con esos filtros.</p>
-          <p className="mt-1 text-sm text-slate-500">Prueba con otra facultad, categoria o rango de precio.</p>
+          <p className="mt-1 text-sm text-slate-500">Prueba con otra facultad, categoría o rango de precio.</p>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {listings.map((listing) => (
-            <ListingCard key={listing.id} listing={listing} onOpen={() => onOpen(listing)} />
-          ))}
-        </div>
+        <>
+          <p className="px-1 text-sm font-bold text-slate-500">{listings.length} publicaciones encontradas</p>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {listings.map((listing) => (
+              <ListingCard key={listing.id} listing={listing} onOpen={() => onOpen(listing)} />
+            ))}
+          </div>
+        </>
       )}
-      <SellerJoin sellerCount={sellerCount} listingCount={listings.length} setView={setView} setFilters={setFilters} />
     </div>
+  );
+}
+
+function IOSInstallPrompt() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+    setVisible(isIos && !isStandalone && sessionStorage.getItem('phasvy-ios-install-dismissed') !== '1');
+  }, []);
+
+  if (!visible) return null;
+
+  return (
+    <aside className="panel mx-auto flex max-w-6xl items-start gap-4 p-5">
+      <img src="/icons/apple-touch-icon.png" alt="" className="h-14 w-14 rounded-2xl shadow-soft" />
+      <div className="min-w-0 flex-1">
+        <p className="font-black">Instala Phasvy como app</p>
+        <p className="mt-1 text-sm leading-6 text-slate-600">En Safari toca Compartir y después “Agregar a pantalla de inicio”.</p>
+      </div>
+      <button
+        className="rounded-full px-2 text-xl font-black text-slate-400"
+        type="button"
+        aria-label="Cerrar instrucciones"
+        onClick={() => {
+          sessionStorage.setItem('phasvy-ios-install-dismissed', '1');
+          setVisible(false);
+        }}
+      >
+        ×
+      </button>
+    </aside>
   );
 }
 
@@ -896,7 +972,7 @@ function HeroCarousel({ onVisit }) {
         </div>
       </div>
       <p className="px-4 py-3 text-center text-xs font-bold text-slate-500">
-        Fotos del hero en <span className="font-black text-campus">public/campus/</span>. Reemplaza los SVG por fotos reales manteniendo los nombres.
+        Fotos del hero en <span className="font-black text-campus">public/campus/</span>. Reemplaza los JPG manteniendo los nombres.
       </p>
     </div>
   );
@@ -949,7 +1025,7 @@ function FacultyTags({ faculties, selectedFaculties, onOpenFaculty }) {
       <p className="mb-4 text-center text-xs font-black uppercase tracking-[0.18em] text-slate-500">Explora por facultad</p>
       <div className="flex flex-wrap justify-center gap-3">
         {tags.map(({ name, faculty }) => {
-          const brand = FACULTY_BRANDS[name] ?? { color: '#f97316', logo: '/faculties/uanl.svg' };
+          const brand = FACULTY_BRANDS[name] ?? { color: '#f97316', logo: '/faculties/uanl.jpg' };
           return (
             <button
               key={name}
@@ -1073,7 +1149,7 @@ function FacultyMarket({ facultyId, faculties, listings, onBack, onOpen }) {
   const faculty = faculties.find((item) => item.id === facultyId);
   const facultyListings = listings.filter((listing) => !facultyId || listing.faculty_id === facultyId);
   const topSellers = getTopSellers(facultyListings);
-  const brand = FACULTY_BRANDS[faculty?.name] ?? { color: '#f97316', logo: '/faculties/uanl.svg' };
+  const brand = FACULTY_BRANDS[faculty?.name] ?? { color: '#f97316', logo: '/faculties/uanl.jpg' };
 
   return (
     <div className="space-y-5">
@@ -1185,7 +1261,7 @@ function SellerJoin({ sellerCount, listingCount, setView, setFilters }) {
           </div>
         </div>
       </div>
-      <img src="/campus/footer-campus.svg" alt="" className="h-80 w-full object-cover object-bottom" />
+      <img src="/campus/footer-campus.jpg" alt="" className="h-80 w-full object-cover object-bottom" />
       <div className="grid gap-8 bg-[#282828] px-6 py-8 text-left text-white md:grid-cols-2 md:px-20">
         <div>
           <h3 className="text-2xl font-black">Enlaces</h3>
@@ -1409,7 +1485,7 @@ function RequireSeller({ user, isSeller, setView, children }) {
       <p className="label">Cuenta cliente</p>
       <h2 className="mt-2 text-2xl font-black">Esta seccion es para vendedores.</h2>
       <p className="mt-2 text-sm leading-6 text-slate-500">Entra como vendedor desde el login o perfil para publicar y gestionar tus productos.</p>
-      <button className="primary-btn mt-5" onClick={() => setView('explore')}>Ver publicaciones</button>
+      <button className="primary-btn mt-5" onClick={() => setView('catalog')}>Ver publicaciones</button>
     </div>
   );
 }

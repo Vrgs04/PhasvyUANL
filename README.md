@@ -58,7 +58,7 @@ Si la pagina dice `Could not find the table 'public.listings' in the schema cach
 
 Si aparece `email rate limit exceeded`, Supabase limito temporalmente los correos de verificacion del proyecto. Espera unos minutos o configura SMTP propio en Supabase Authentication para produccion.
 
-Las imagenes del carrusel inicial estan en `public/carousel/`. Puedes reemplazar `slide-bebidas.svg`, `slide-comidas.svg` y `slide-postres.svg` por fotos reales manteniendo los mismos nombres.
+Las imagenes del carrusel inicial estan en `public/carousel/`. Puedes reemplazar `slide-bebidas.jpg`, `slide-comidas.jpg` y `slide-postres.jpg` por fotos reales manteniendo los mismos nombres.
 
 ## PWA en iPhone
 
@@ -67,7 +67,7 @@ Las imagenes del carrusel inicial estan en `public/carousel/`. Puedes reemplazar
 3. Abre el sitio desde Safari en iPhone.
 4. Toca Compartir y luego "Agregar a pantalla de inicio".
 
-Safari en iOS requiere HTTPS para service workers fuera de localhost. La app ya incluye `manifest.json`, `sw.js`, modo `standalone`, `theme-color` y meta tags de Apple.
+Safari en iOS requiere HTTPS para service workers fuera de localhost. La app incluye `manifest.json`, `sw.js`, modo `standalone`, icono PNG de 180 px y meta tags de Apple. En Safari usa Compartir > Agregar a pantalla de inicio.
 
 ## Deploy en Cloudflare Pages
 
