@@ -38,6 +38,8 @@ create table if not exists public.users (
   full_name text,
   whatsapp text,
   avatar_url text,
+  business_name text,
+  business_description text,
   faculty_id uuid references public.faculties(id) on delete set null,
   role public.user_role not null default 'user',
   is_blocked boolean not null default false,
@@ -49,6 +51,8 @@ alter table public.users add column if not exists email text;
 alter table public.users add column if not exists full_name text;
 alter table public.users add column if not exists whatsapp text;
 alter table public.users add column if not exists avatar_url text;
+alter table public.users add column if not exists business_name text;
+alter table public.users add column if not exists business_description text;
 alter table public.users add column if not exists faculty_id uuid references public.faculties(id) on delete set null;
 alter table public.users add column if not exists role public.user_role not null default 'user';
 alter table public.users add column if not exists is_blocked boolean not null default false;
@@ -194,18 +198,22 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.users (id, email, full_name, whatsapp, role)
+  insert into public.users (id, email, full_name, whatsapp, business_name, business_description, role)
   values (
     new.id,
     new.email,
     new.raw_user_meta_data ->> 'full_name',
     new.raw_user_meta_data ->> 'whatsapp',
+    new.raw_user_meta_data ->> 'business_name',
+    new.raw_user_meta_data ->> 'business_description',
     case when new.raw_user_meta_data ->> 'role' = 'seller' then 'seller'::public.user_role else 'user'::public.user_role end
   )
   on conflict (id) do update
       set email = excluded.email,
       full_name = coalesce(public.users.full_name, excluded.full_name),
       whatsapp = coalesce(public.users.whatsapp, excluded.whatsapp),
+      business_name = coalesce(public.users.business_name, excluded.business_name),
+      business_description = coalesce(public.users.business_description, excluded.business_description),
       role = coalesce(public.users.role, excluded.role);
   return new;
 end;
@@ -243,7 +251,7 @@ for all using (public.is_admin()) with check (public.is_admin());
 
 drop policy if exists "Users read public profiles" on public.users;
 create policy "Users read public profiles" on public.users
-for select using (true);
+for select using (auth.uid() is not null);
 
 drop policy if exists "Users insert own profile" on public.users;
 create policy "Users insert own profile" on public.users
@@ -259,7 +267,7 @@ for update using (public.is_admin()) with check (public.is_admin());
 
 drop policy if exists "Anyone reads visible listings" on public.listings;
 create policy "Anyone reads visible listings" on public.listings
-for select using (status in ('active', 'sold') or seller_id = auth.uid() or public.is_admin());
+for select using (auth.uid() is not null and (status in ('active', 'sold') or seller_id = auth.uid() or public.is_admin()));
 
 drop policy if exists "Authenticated users create listings" on public.listings;
 create policy "Authenticated users create listings" on public.listings
@@ -269,6 +277,7 @@ for insert with check (
     select 1 from public.users
     where id = auth.uid()
       and is_blocked = false
+      and role in ('seller', 'admin')
   )
 );
 
@@ -282,7 +291,7 @@ for update using (public.is_admin()) with check (public.is_admin());
 
 drop policy if exists "Anyone reads listing images" on public.listing_images;
 create policy "Anyone reads listing images" on public.listing_images
-for select using (true);
+for select using (auth.uid() is not null);
 
 drop policy if exists "Sellers add listing images" on public.listing_images;
 create policy "Sellers add listing images" on public.listing_images
@@ -297,6 +306,22 @@ for insert with check (
 drop policy if exists "Sellers delete own listing images" on public.listing_images;
 create policy "Sellers delete own listing images" on public.listing_images
 for delete using (
+  exists (
+    select 1 from public.listings
+    where listings.id = listing_images.listing_id
+      and (listings.seller_id = auth.uid() or public.is_admin())
+  )
+);
+
+drop policy if exists "Sellers reorder own listing images" on public.listing_images;
+create policy "Sellers reorder own listing images" on public.listing_images
+for update using (
+  exists (
+    select 1 from public.listings
+    where listings.id = listing_images.listing_id
+      and (listings.seller_id = auth.uid() or public.is_admin())
+  )
+) with check (
   exists (
     select 1 from public.listings
     where listings.id = listing_images.listing_id
@@ -322,7 +347,7 @@ for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 drop policy if exists "Anyone reads visible listing reviews" on public.listing_reviews;
 create policy "Anyone reads visible listing reviews" on public.listing_reviews
-for select using (status = 'visible' or reviewer_id = auth.uid() or public.is_admin());
+for select using (auth.uid() is not null and (status = 'visible' or reviewer_id = auth.uid() or public.is_admin()));
 
 drop policy if exists "Authenticated users create listing reviews" on public.listing_reviews;
 create policy "Authenticated users create listing reviews" on public.listing_reviews

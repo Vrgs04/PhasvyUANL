@@ -26,6 +26,8 @@ export const DEMO_SELLERS = [
 ].map((name, index) => ({
   id: `seller-${index + 1}`,
   full_name: name,
+  business_name: ['Cafe Entre Clases', 'Punto Fresco', 'Dulce Parcial', 'Tacos del Campus', 'Bowl Med', 'Lunch FARQ'][index % 6],
+  business_description: 'Negocio estudiantil con entregas coordinadas dentro del campus.',
   whatsapp: `52811234${String(5600 + index).padStart(4, '0')}`,
   role: 'seller',
   is_blocked: false,

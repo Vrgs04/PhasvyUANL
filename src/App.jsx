@@ -22,12 +22,15 @@ const sellerNavItems = [
 
 const QUICK_FACULTIES = ['FIME', 'FACPyA', 'FACDyC', 'Medicina', 'FAPSI', 'FARQ', 'Odontologia', 'FCQ'];
 const CAMPUS_GROUPS = [
-  { id: 'cu', label: 'CU', names: ['FIME', 'FACPyA', 'FACDyC', 'FCQ'] },
+  { id: 'cu', label: 'Ciudad Universitaria', shortLabel: 'CU', names: ['FIME', 'FACPyA', 'FACDyC', 'FCQ', 'FCFM', 'Ciencias Biologicas'], image: '/campus/campus-cu.svg', logo: '/faculties/uanl.svg' },
   { id: 'agro', label: 'Agropecuarias', names: ['Agronomia', 'Medicina Veterinaria', 'Veterinaria'] },
-  { id: 'salud', label: 'Salud', names: ['Medicina', 'Odontologia'] },
-  { id: 'mederos', label: 'Mederos', names: ['FAPSI', 'FARQ'] },
+  { id: 'salud', label: 'Medicina', shortLabel: 'Medicina', names: ['Medicina', 'Odontologia'], image: '/campus/campus-medicina.svg', logo: '/faculties/medicina.svg' },
+  { id: 'mederos', label: 'Mederos', shortLabel: 'Mederos', names: ['FAPSI', 'FARQ', 'Filosofia y Letras'], image: '/campus/campus-mederos.svg', logo: '/faculties/uanl.svg' },
 ];
+const FEATURED_CAMPUSES = CAMPUS_GROUPS.filter((campus) => campus.image);
 const MAX_AVATAR_SIZE = 2 * 1024 * 1024;
+const MAX_LISTING_IMAGE_SIZE = 5 * 1024 * 1024;
+const MAX_LISTING_IMAGES = 8;
 const FACULTY_BRANDS = {
   FIME: { color: '#006b4f', logo: '/faculties/fime.svg' },
   FACPyA: { color: '#0f5ea8', logo: '/faculties/facpya.svg' },
@@ -49,13 +52,13 @@ const HERO_SLIDES = [
   { title: 'Vende entre clases', text: 'Publica comida, bebidas, postres, libros o servicios en minutos.', faculty: 'Campus', image: '/campus/hero-vendedores.svg' },
 ];
 const PHONE_CODES = [
-  { label: '🇲🇽 +52', value: '52', country: 'Mexico' },
-  { label: '🇺🇸 +1', value: '1', country: 'Estados Unidos' },
-  { label: '🇨🇦 +1', value: '1', country: 'Canada' },
-  { label: '🇨🇴 +57', value: '57', country: 'Colombia' },
-  { label: '🇦🇷 +54', value: '54', country: 'Argentina' },
-  { label: '🇨🇱 +56', value: '56', country: 'Chile' },
-  { label: '🇪🇸 +34', value: '34', country: 'Espana' },
+  { id: 'MX', label: '🇲🇽 +52', value: '52', country: 'Mexico' },
+  { id: 'US', label: '🇺🇸 +1', value: '1', country: 'Estados Unidos' },
+  { id: 'CA', label: '🇨🇦 +1', value: '1', country: 'Canada' },
+  { id: 'CO', label: '🇨🇴 +57', value: '57', country: 'Colombia' },
+  { id: 'AR', label: '🇦🇷 +54', value: '54', country: 'Argentina' },
+  { id: 'CL', label: '🇨🇱 +56', value: '56', country: 'Chile' },
+  { id: 'ES', label: '🇪🇸 +34', value: '34', country: 'Espana' },
 ];
 
 const INFO_PAGES = {
@@ -125,6 +128,21 @@ function normalizePhone(phone) {
   return phone.replace(/[^\d]/g, '').replace(/^0+/, '');
 }
 
+function splitPhoneNumber(phone) {
+  const normalized = normalizePhone(phone || '');
+  const knownCodes = [...PHONE_CODES].sort((a, b) => b.value.length - a.value.length);
+  const country = normalized.length > 10 ? knownCodes.find((item) => normalized.startsWith(item.value)) ?? PHONE_CODES[0] : PHONE_CODES[0];
+  return { code: country.id, number: normalized.length > 10 ? normalized.slice(country.value.length, country.value.length + 10) : normalized.slice(0, 10) };
+}
+
+function getDialCode(countryId) {
+  return PHONE_CODES.find((item) => item.id === countryId)?.value ?? '52';
+}
+
+function createEmptyFilters() {
+  return { q: '', faculties: [], category: '', min: '', max: '' };
+}
+
 function getReviews(listing) {
   return Array.isArray(listing.reviews) ? listing.reviews.filter((review) => review.status !== 'hidden') : [];
 }
@@ -187,8 +205,7 @@ function getFacultyIdsByNames(faculties, names) {
 }
 
 function getSelectedFacultyIds(filters) {
-  if (filters.faculties?.length) return filters.faculties;
-  return filters.faculty ? [filters.faculty] : [];
+  return filters.faculties ?? [];
 }
 
 function getErrorMessage(error, context = '') {
@@ -221,7 +238,7 @@ function getErrorMessage(error, context = '') {
     return 'No se pudo guardar la resena. Ejecuta el supabase/schema.sql actualizado para crear permisos y tabla listing_reviews.';
   }
   if (message.toLowerCase().includes('bucket not found')) {
-    return 'No existe el bucket de Storage. Ejecuta supabase/repair-current-project.sql en Supabase SQL Editor para crear el bucket avatars.';
+    return 'No existe el bucket de Storage. Ejecuta supabase/repair-current-project.sql en Supabase SQL Editor para crear los buckets de imagenes y avatares.';
   }
   if (message.toLowerCase().includes('listings_description_check')) {
     return 'La descripcion debe tener al menos 10 caracteres.';
@@ -259,14 +276,7 @@ function App() {
   const [selectedListing, setSelectedListing] = useState(null);
   const [selectedFacultyId, setSelectedFacultyId] = useState('');
   const [editingListing, setEditingListing] = useState(null);
-  const [filters, setFilters] = useState({
-    q: '',
-    faculty: '',
-    faculties: [],
-    category: '',
-    min: '',
-    max: '',
-  });
+  const [filters, setFilters] = useState(createEmptyFilters);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState(null);
 
@@ -300,12 +310,18 @@ function App() {
 
   useEffect(() => {
     loadCatalogs();
-    loadListings();
   }, []);
 
   useEffect(() => {
-    if (user) loadProfile(user.id);
-    if (!user) setProfile(null);
+    if (user) {
+      loadProfile(user.id);
+      loadListings();
+      return;
+    }
+    setProfile(null);
+    setListings([]);
+    setSelectedListing(null);
+    setLoading(false);
   }, [user?.id]);
 
   async function loadCatalogs() {
@@ -336,6 +352,8 @@ function App() {
           email: user.email,
           full_name: user.user_metadata?.full_name ?? '',
           whatsapp: user.user_metadata?.whatsapp ?? '',
+          business_name: user.user_metadata?.business_name ?? '',
+          business_description: user.user_metadata?.business_description ?? '',
           role: user.user_metadata?.role === 'seller' ? 'seller' : 'user',
         })
         .select()
@@ -385,7 +403,7 @@ function App() {
     const listingIds = rawListings.map((listing) => listing.id).filter(Boolean);
 
     const [{ data: sellers }, { data: reviews }] = await Promise.all([
-      sellerIds.length ? supabase.from('users').select('id, email, full_name, whatsapp, avatar_url').in('id', sellerIds) : { data: [] },
+      sellerIds.length ? supabase.from('users').select('id, email, full_name, whatsapp, avatar_url, business_name, business_description').in('id', sellerIds) : { data: [] },
       listingIds.length ? supabase.from('listing_reviews').select('*').in('listing_id', listingIds).eq('status', 'visible') : { data: [] },
     ]);
 
@@ -400,13 +418,19 @@ function App() {
     return rawListings.map((listing) => ({
       ...listing,
       seller: sellerMap.get(listing.seller_id) ?? listing.seller,
+      images: [...(listing.images ?? [])].sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0)),
       reviews: reviewsByListing.get(listing.id) ?? listing.reviews ?? [],
     }));
   }
 
   function openFaculty(facultyId) {
+    if (!user) {
+      setView('profile');
+      notify('Inicia sesion para ver las publicaciones.', 'error');
+      return;
+    }
     setSelectedFacultyId(facultyId);
-    setFilters((current) => ({ ...current, faculty: facultyId, faculties: [facultyId] }));
+    setFilters((current) => ({ ...current, faculties: [facultyId] }));
     setView('faculty');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -524,12 +548,13 @@ function App() {
               onOpen={setSelectedListing}
               onOpenFaculty={openFaculty}
               setView={setView}
+              user={user}
             />
           )}
 
           {view === 'faculty' && (
             <FacultyMarket
-              facultyId={selectedFacultyId || filters.faculty}
+              facultyId={selectedFacultyId || filters.faculties[0]}
               faculties={faculties}
               listings={listings.filter((listing) => listing.status !== 'deleted')}
               onBack={() => setView('explore')}
@@ -574,6 +599,7 @@ function App() {
               user={user}
               profile={profile}
               onSaved={() => user && loadProfile(user.id)}
+              onAuthenticated={loadProfile}
               onSignOut={signOut}
               setNotice={notify}
             />
@@ -618,7 +644,7 @@ function App() {
 
       <MobileNav view={view} setView={setView} isAdmin={isAdmin} isSeller={isSeller} />
 
-      {selectedListing && (
+      {user && selectedListing && (
         <ListingDetail
           listing={selectedListing}
           canManage={isAdmin || selectedListing.seller_id === user?.id}
@@ -681,12 +707,12 @@ function Header({ user, profile, view, onNavigate, isAdmin, isSeller }) {
           ))}
         </nav>
 
-        <button className="hidden justify-self-end rounded-3xl border border-white/20 bg-white px-4 py-3 text-sm font-black text-ink shadow-soft transition active:scale-[0.98] md:inline-flex" onClick={() => onNavigate(isSeller ? 'create' : 'explore')}>
-          {isSeller ? 'Publicar' : 'Ver publicaciones'}
+        <button className="hidden justify-self-end rounded-3xl border border-white/20 bg-white px-4 py-3 text-sm font-black text-ink shadow-soft transition active:scale-[0.98] md:inline-flex" onClick={() => onNavigate(!user ? 'profile' : isSeller ? 'create' : 'explore')}>
+          {!user ? 'Iniciar sesion' : isSeller ? 'Publicar' : 'Ver publicaciones'}
         </button>
 
-        <button className="absolute right-5 top-5 rounded-full bg-orange-100 px-3 py-1 text-xs font-black text-campus md:hidden" onClick={() => onNavigate('explore')}>
-          Phasvy
+        <button className="absolute right-5 top-5 rounded-full bg-orange-100 px-3 py-1 text-xs font-black text-campus md:hidden" onClick={() => onNavigate(user ? 'explore' : 'profile')}>
+          {user ? 'Phasvy' : 'Entrar'}
         </button>
       </div>
     </header>
@@ -740,19 +766,37 @@ function SetupWarning() {
   );
 }
 
-function Explore({ loading, listings, filters, setFilters, faculties, categories, onOpen, onOpenFaculty, setView }) {
+function Explore({ loading, listings, filters, setFilters, faculties, categories, onOpen, onOpenFaculty, setView, user }) {
   const sellerCount = new Set(listings.map((listing) => listing.seller_id)).size;
   const jumpToListings = () => window.setTimeout(() => document.getElementById('listings-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+  const openLoginOrListings = () => {
+    if (!user) {
+      setView('profile');
+      return;
+    }
+    jumpToListings();
+  };
+  const applyCampus = (campus) => {
+    if (!user) {
+      setView('profile');
+      return;
+    }
+    setFilters((current) => ({ ...current, faculties: getFacultyIdsByNames(faculties, campus.names) }));
+    jumpToListings();
+  };
 
   return (
     <div className="space-y-5">
-      <FacultyTags faculties={faculties} selectedFaculty={filters.faculty} onOpenFaculty={onOpenFaculty} />
-      <HeroCarousel onVisit={jumpToListings} />
-      <FeaturedCategories categories={categories} setFilters={setFilters} onSelect={jumpToListings} />
-      <Filters filters={filters} setFilters={setFilters} faculties={faculties} categories={categories} />
+      <CampusTags onSelect={applyCampus} />
+      <FacultyTags faculties={faculties} selectedFaculties={filters.faculties} onOpenFaculty={onOpenFaculty} />
+      <HeroCarousel onVisit={openLoginOrListings} />
+      <FeaturedCategories categories={categories} setFilters={setFilters} onSelect={openLoginOrListings} />
+      {user && <Filters filters={filters} setFilters={setFilters} faculties={faculties} categories={categories} />}
 
       <div id="listings-section" className="scroll-mt-28" />
-      {loading ? (
+      {!user ? (
+        <LoginGate onLogin={() => setView('profile')} />
+      ) : loading ? (
         <div className="panel p-8 text-center font-semibold text-slate-500">Cargando publicaciones...</div>
       ) : listings.length === 0 ? (
         <div className="panel p-8 text-center">
@@ -768,6 +812,45 @@ function Explore({ loading, listings, filters, setFilters, faculties, categories
       )}
       <SellerJoin sellerCount={sellerCount} listingCount={listings.length} setView={setView} setFilters={setFilters} />
     </div>
+  );
+}
+
+function CampusTags({ onSelect }) {
+  return (
+    <section className="mx-auto max-w-6xl">
+      <p className="mb-4 text-center text-xs font-black uppercase tracking-[0.18em] text-slate-500">Explora por campus</p>
+      <div className="grid gap-4 md:grid-cols-3">
+        {FEATURED_CAMPUSES.map((campus) => (
+          <button
+            key={campus.id}
+            className="group relative min-h-52 overflow-hidden rounded-[24px] bg-slate-900 text-left shadow-ios"
+            type="button"
+            onClick={() => onSelect(campus)}
+          >
+            <img src={campus.image} alt="" className="absolute inset-0 h-full w-full object-cover opacity-75 transition duration-500 group-hover:scale-105" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent" />
+            <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-5 text-white">
+              <div>
+                <span className="text-xs font-black uppercase tracking-[0.14em] text-orange-200">Campus UANL</span>
+                <h2 className="mt-1 text-2xl font-black">{campus.label}</h2>
+              </div>
+              <img src={campus.logo} alt="" className="h-12 w-12 rounded-full bg-white p-1 object-contain shadow-soft" />
+            </div>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function LoginGate({ onLogin }) {
+  return (
+    <section className="dark-panel mx-auto max-w-3xl p-7 text-center md:p-10">
+      <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-200">Contenido para la comunidad</p>
+      <h2 className="mt-3 text-3xl font-black text-white">Inicia sesion para ver las publicaciones</h2>
+      <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-white/60">Los productos, datos de vendedores y botones de contacto solo aparecen para usuarios con una cuenta activa.</p>
+      <button className="primary-btn mt-6" type="button" onClick={onLogin}>Iniciar sesion</button>
+    </section>
   );
 }
 
@@ -852,7 +935,7 @@ function FeaturedCategories({ categories, setFilters, onSelect }) {
   );
 }
 
-function FacultyTags({ faculties, selectedFaculty, onOpenFaculty }) {
+function FacultyTags({ faculties, selectedFaculties, onOpenFaculty }) {
   const tags = QUICK_FACULTIES.map((name) => {
     const aliases = name === 'FAPSI' ? ['FAPSI', 'Psicologia'] : [name];
     return {
@@ -872,7 +955,7 @@ function FacultyTags({ faculties, selectedFaculty, onOpenFaculty }) {
               key={name}
               className={cx(
                 'flex items-center gap-2 rounded-full border bg-white px-3 py-2 text-sm font-black shadow-sm transition hover:-translate-y-0.5',
-                selectedFaculty === faculty.id ? 'ring-4 ring-orange-200' : '',
+                selectedFaculties.includes(faculty.id) ? 'ring-4 ring-orange-200' : '',
               )}
               style={{ borderColor: `${brand.color}55`, color: brand.color }}
               type="button"
@@ -894,7 +977,11 @@ function FacultyTags({ faculties, selectedFaculty, onOpenFaculty }) {
 function Filters({ filters, setFilters, faculties, categories }) {
   const update = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
   const selectedFacultyIds = getSelectedFacultyIds(filters);
-  const setSelectedFaculties = (ids) => setFilters((current) => ({ ...current, faculty: ids[0] ?? '', faculties: ids }));
+  const activeCampusId = CAMPUS_GROUPS.find((campus) => {
+    const ids = getFacultyIdsByNames(faculties, campus.names);
+    return ids.length > 0 && ids.length === selectedFacultyIds.length && ids.every((id) => selectedFacultyIds.includes(id));
+  })?.id;
+  const setSelectedFaculties = (ids) => setFilters((current) => ({ ...current, faculties: [...new Set(ids)] }));
   const toggleFaculty = (facultyId) => {
     const nextIds = selectedFacultyIds.includes(facultyId)
       ? selectedFacultyIds.filter((id) => id !== facultyId)
@@ -903,7 +990,8 @@ function Filters({ filters, setFilters, faculties, categories }) {
   };
   const applyCampus = (campus) => {
     const ids = getFacultyIdsByNames(faculties, campus.names);
-    setSelectedFaculties(ids);
+    const isExactSelection = ids.length === selectedFacultyIds.length && ids.every((id) => selectedFacultyIds.includes(id));
+    setSelectedFaculties(isExactSelection ? [] : ids);
   };
   const quickFaculties = QUICK_FACULTIES.map((name) => {
     const aliases = name === 'FAPSI' ? ['FAPSI', 'Psicologia'] : [name];
@@ -915,6 +1003,12 @@ function Filters({ filters, setFilters, faculties, categories }) {
 
   return (
     <div className="panel mx-auto max-w-6xl space-y-3 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="label">Filtrar publicaciones</p>
+        <button className="text-sm font-black text-campus underline" type="button" onClick={() => setFilters(createEmptyFilters())}>
+          Limpiar filtros
+        </button>
+      </div>
       {quickFaculties.length > 0 && (
         <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
           <button
@@ -926,7 +1020,7 @@ function Filters({ filters, setFilters, faculties, categories }) {
           </button>
           {CAMPUS_GROUPS.map((campus) => {
             const ids = getFacultyIdsByNames(faculties, campus.names);
-            const isActive = ids.length > 0 && ids.every((id) => selectedFacultyIds.includes(id));
+            const isActive = activeCampusId === campus.id;
             return (
               <button
                 key={campus.id}
@@ -934,14 +1028,14 @@ function Filters({ filters, setFilters, faculties, categories }) {
                 type="button"
                 onClick={() => applyCampus(campus)}
               >
-                {campus.label}
+                {campus.shortLabel ?? campus.label}
               </button>
             );
           })}
           {quickFaculties.map(({ name, faculty }) => (
             <button
               key={faculty.id}
-              className={cx('chip', selectedFacultyIds.includes(faculty.id) && 'chip-active')}
+              className={cx('chip', !activeCampusId && selectedFacultyIds.includes(faculty.id) && 'chip-active')}
               type="button"
               onClick={() => toggleFaculty(faculty.id)}
             >
@@ -952,8 +1046,8 @@ function Filters({ filters, setFilters, faculties, categories }) {
       )}
       <input className="field" placeholder="Buscar libros, calculadora, comida, asesorias..." value={filters.q} onChange={(event) => update('q', event.target.value)} />
       <div className="grid gap-3 md:grid-cols-[1.1fr_1.1fr_0.8fr_0.8fr]">
-        <select className="field" value={selectedFacultyIds[0] ?? ''} onChange={(event) => setSelectedFaculties(event.target.value ? [event.target.value] : [])}>
-          <option value="">Todas las facultades</option>
+        <select className="field" value="" onChange={(event) => event.target.value && toggleFaculty(event.target.value)}>
+          <option value="">Agregar facultad...</option>
           {faculties.map((faculty) => (
             <option key={faculty.id} value={faculty.id}>
               {faculty.name}
@@ -1023,7 +1117,7 @@ function FacultyMarket({ facultyId, faculties, listings, onBack, onOpen }) {
                   <span className="grid h-9 w-9 place-items-center rounded-full bg-campus text-sm font-black text-white">#{index + 1}</span>
                   <RatingBadge rating={item.rating} count={item.reviewCount} compact />
                 </div>
-                <p className="mt-4 line-clamp-2 text-sm font-black">{item.seller?.full_name ?? 'Vendedor UANL'}</p>
+                <p className="mt-4 line-clamp-2 text-sm font-black">{item.seller?.business_name || item.seller?.full_name || 'Vendedor UANL'}</p>
                 <p className="mt-1 text-xs font-semibold text-slate-500">{item.listingCount} publicaciones activas</p>
               </div>
             ))}
@@ -1053,7 +1147,7 @@ function SellerJoin({ sellerCount, listingCount, setView, setFilters }) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   const visitStores = () => {
-    setFilters((current) => ({ ...current, faculty: '', faculties: [], category: '', q: '', min: '', max: '' }));
+    setFilters(createEmptyFilters());
     go('explore');
   };
 
@@ -1205,8 +1299,9 @@ function ListingDetail({ listing, canManage, onClose, onDelete, onSold, user, on
             </div>
             <p className="whitespace-pre-wrap text-slate-600">{listing.description}</p>
             <div className="rounded-2xl bg-slate-50 p-4 text-sm">
-              <p className="font-black">{listing.seller?.full_name ?? 'Vendedor UANL'}</p>
-              <p className="text-slate-500">{listing.contact_note || 'Acuerda entrega dentro del campus. No hay pagos en linea ni envios en esta version.'}</p>
+              <p className="font-black">{listing.seller?.business_name || listing.seller?.full_name || 'Vendedor UANL'}</p>
+              {listing.seller?.business_description && <p className="mt-1 text-slate-500">{listing.seller.business_description}</p>}
+              <p className="mt-1 text-slate-500">{listing.contact_note || 'Acuerda entrega dentro del campus. No hay pagos en linea ni envios en esta version.'}</p>
             </div>
             <ReviewSection listing={listing} reviews={reviews} user={user} onReview={onReview} />
             <div className="grid gap-3 sm:grid-cols-2">
@@ -1321,18 +1416,74 @@ function RequireSeller({ user, isSeller, setView, children }) {
 
 function ListingForm({ user, faculties, categories, editing, onDone, setNotice }) {
   const [form, setForm] = useState(editing ?? EMPTY_LISTING);
-  const [files, setFiles] = useState([]);
+  const initialPhone = splitPhoneNumber(editing?.whatsapp);
+  const [phoneCode, setPhoneCode] = useState(initialPhone.code);
+  const [phone, setPhone] = useState(initialPhone.number);
+  const [imageItems, setImageItems] = useState(() => (
+    [...(editing?.images ?? [])]
+      .sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0))
+      .map((image) => ({ ...image, key: image.id, kind: 'existing', preview: image.url }))
+  ));
   const [saving, setSaving] = useState(false);
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
   useEffect(() => {
     setForm(editing ?? EMPTY_LISTING);
+    const nextPhone = splitPhoneNumber(editing?.whatsapp);
+    setPhoneCode(nextPhone.code);
+    setPhone(nextPhone.number);
+    setImageItems(
+      [...(editing?.images ?? [])]
+        .sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0))
+        .map((image) => ({ ...image, key: image.id, kind: 'existing', preview: image.url })),
+    );
   }, [editing?.id]);
+
+  function addImages(fileList) {
+    const files = Array.from(fileList ?? []);
+    const validFiles = files.filter((file) => file.type.startsWith('image/') && file.size <= MAX_LISTING_IMAGE_SIZE);
+    if (validFiles.length !== files.length) {
+      setNotice('Solo se aceptan imagenes de hasta 5 MB.', 'error');
+    }
+    const available = Math.max(0, MAX_LISTING_IMAGES - imageItems.length);
+    if (validFiles.length > available) {
+      setNotice(`Puedes subir hasta ${MAX_LISTING_IMAGES} imagenes por publicacion.`, 'error');
+    }
+    const additions = validFiles.slice(0, available).map((file) => ({
+      key: `${file.name}-${file.lastModified}-${crypto.randomUUID()}`,
+      kind: 'new',
+      file,
+      preview: URL.createObjectURL(file),
+    }));
+    setImageItems((current) => [...current, ...additions]);
+  }
+
+  function removeImage(index) {
+    setImageItems((current) => {
+      const item = current[index];
+      if (item?.kind === 'new') URL.revokeObjectURL(item.preview);
+      return current.filter((_, itemIndex) => itemIndex !== index);
+    });
+  }
+
+  function moveImage(index, direction) {
+    setImageItems((current) => {
+      const target = index + direction;
+      if (target < 0 || target >= current.length) return current;
+      const next = [...current];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
 
   async function saveListing(event) {
     event.preventDefault();
     if (form.description.trim().length < 10) {
       setNotice('La descripcion debe tener al menos 10 caracteres.', 'error');
+      return;
+    }
+    if (phone.length !== 10) {
+      setNotice('El WhatsApp debe tener exactamente 10 digitos.', 'error');
       return;
     }
     setSaving(true);
@@ -1343,7 +1494,7 @@ function ListingForm({ user, faculties, categories, editing, onDone, setNotice }
       price: Number(form.price),
       faculty_id: form.faculty_id,
       category_id: form.category_id,
-      whatsapp: form.whatsapp,
+      whatsapp: `${getDialCode(phoneCode)}${phone}`,
       contact_note: form.contact_note,
       seller_id: user.id,
       status: editing?.status ?? 'active',
@@ -1358,21 +1509,48 @@ function ListingForm({ user, faculties, categories, editing, onDone, setNotice }
       return setNotice(result.error, 'error');
     }
 
-    for (const file of files) {
-      const path = `${user.id}/${result.data.id}/${Date.now()}-${file.name}`;
-      const upload = await supabase.storage.from('listing-images').upload(path, file, { upsert: false });
-      if (upload.error) {
-        setNotice(upload.error, 'error');
+    const existingItems = imageItems.filter((item) => item.kind === 'existing');
+    const removedItems = (editing?.images ?? []).filter((image) => !existingItems.some((item) => item.id === image.id));
+    if (removedItems.length) {
+      const storagePaths = removedItems.map((image) => image.storage_path).filter(Boolean);
+      if (storagePaths.length) await supabase.storage.from('listing-images').remove(storagePaths);
+      const { error: removeError } = await supabase.from('listing_images').delete().in('id', removedItems.map((image) => image.id));
+      if (removeError) {
+        setSaving(false);
+        return setNotice(removeError, 'error');
+      }
+    }
+
+    for (const [sortOrder, item] of imageItems.entries()) {
+      if (item.kind === 'existing') {
+        const { error: orderError } = await supabase.from('listing_images').update({ sort_order: sortOrder }).eq('id', item.id);
+        if (orderError) {
+          setSaving(false);
+          return setNotice(orderError, 'error');
+        }
         continue;
       }
+      const safeName = item.file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+      const path = `${user.id}/${result.data.id}/${Date.now()}-${sortOrder}-${safeName}`;
+      const upload = await supabase.storage.from('listing-images').upload(path, item.file, { upsert: false });
+      if (upload.error) {
+        setSaving(false);
+        return setNotice(upload.error, 'error');
+      }
       const { data } = supabase.storage.from('listing-images').getPublicUrl(path);
-      await supabase.from('listing_images').insert({
+      const { error: imageError } = await supabase.from('listing_images').insert({
         listing_id: result.data.id,
         url: data.publicUrl,
         storage_path: path,
+        sort_order: sortOrder,
       });
+      if (imageError) {
+        setSaving(false);
+        return setNotice(imageError, 'error');
+      }
     }
 
+    imageItems.filter((item) => item.kind === 'new').forEach((item) => URL.revokeObjectURL(item.preview));
     setSaving(false);
     setNotice(editing?.id ? 'Publicacion actualizada.' : 'Publicacion creada.', 'success');
     onDone();
@@ -1398,14 +1576,65 @@ function ListingForm({ user, faculties, categories, editing, onDone, setNotice }
         </select>
       </div>
       <div className="grid gap-3 md:grid-cols-2">
-        <input className="field" placeholder="WhatsApp con lada" value={form.whatsapp ?? ''} onChange={(event) => update('whatsapp', event.target.value)} />
+        <div className="grid grid-cols-[8.5rem_1fr] gap-2">
+          <select className="field" value={phoneCode} onChange={(event) => setPhoneCode(event.target.value)} aria-label="Lada de WhatsApp">
+            {PHONE_CODES.map((code) => (
+              <option key={code.id} value={code.id}>{code.label}</option>
+            ))}
+          </select>
+          <input
+            className="field"
+            required
+            inputMode="numeric"
+            maxLength="10"
+            placeholder="WhatsApp 10 digitos"
+            value={phone}
+            onChange={(event) => setPhone(event.target.value.replace(/\D/g, '').slice(0, 10))}
+          />
+        </div>
         <input className="field" placeholder="Nota de contacto opcional" value={form.contact_note ?? ''} onChange={(event) => update('contact_note', event.target.value)} />
       </div>
-      <label className="block rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm font-semibold text-slate-500">
-        Subir imagenes
-        <input className="sr-only" type="file" multiple accept="image/*" onChange={(event) => setFiles(Array.from(event.target.files ?? []))} />
-        {files.length > 0 && <span className="mt-2 block text-ink">{files.length} archivo(s) seleccionado(s)</span>}
-      </label>
+      <div className="space-y-3 rounded-3xl border border-slate-200 bg-slate-50 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="font-black">Imagenes</p>
+            <p className="text-xs font-semibold text-slate-500">La primera sera la portada. Usa las flechas para cambiar el orden.</p>
+          </div>
+          <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-campus">{imageItems.length}/{MAX_LISTING_IMAGES}</span>
+        </div>
+        {imageItems.length > 0 && (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+            {imageItems.map((item, index) => (
+              <div key={item.key} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div className="relative aspect-square bg-slate-100">
+                  <img src={item.preview} alt={`Imagen ${index + 1}`} className="h-full w-full object-cover" />
+                  {index === 0 && <span className="absolute left-2 top-2 rounded-full bg-campus px-2 py-1 text-[10px] font-black text-white">Portada</span>}
+                </div>
+                <div className="grid grid-cols-3 gap-1 p-1.5">
+                  <button className="rounded-xl bg-slate-100 py-2 font-black disabled:opacity-30" type="button" title="Mover a la izquierda" aria-label="Mover a la izquierda" disabled={index === 0} onClick={() => moveImage(index, -1)}>‹</button>
+                  <button className="rounded-xl bg-red-50 py-2 font-black text-red-600" type="button" title="Eliminar imagen" aria-label="Eliminar imagen" onClick={() => removeImage(index)}>×</button>
+                  <button className="rounded-xl bg-slate-100 py-2 font-black disabled:opacity-30" type="button" title="Mover a la derecha" aria-label="Mover a la derecha" disabled={index === imageItems.length - 1} onClick={() => moveImage(index, 1)}>›</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {imageItems.length < MAX_LISTING_IMAGES && (
+          <label className="block cursor-pointer rounded-2xl border border-dashed border-orange-300 bg-white p-4 text-center text-sm font-black text-campus transition hover:bg-orange-50">
+            Agregar imagenes
+            <input
+              className="sr-only"
+              type="file"
+              multiple
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              onChange={(event) => {
+                addImages(event.target.files);
+                event.target.value = '';
+              }}
+            />
+          </label>
+        )}
+      </div>
       <button className="primary-btn w-full" disabled={saving}>{saving ? 'Guardando...' : 'Guardar publicacion'}</button>
     </form>
   );
@@ -1469,20 +1698,21 @@ function InfoPage({ page, onBack }) {
   );
 }
 
-function Profile({ user, profile, onSaved, onSignOut, setNotice }) {
+function Profile({ user, profile, onSaved, onAuthenticated, onSignOut, setNotice }) {
   if (!isSupabaseConfigured) return <SetupWarning />;
-  if (!user) return <AuthForm setNotice={setNotice} />;
+  if (!user) return <AuthForm setNotice={setNotice} onAuthenticated={onAuthenticated} />;
   return <ProfileForm user={user} profile={profile} onSaved={onSaved} onSignOut={onSignOut} setNotice={setNotice} />;
 }
 
-function AuthForm({ setNotice }) {
+function AuthForm({ setNotice, onAuthenticated }) {
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [fullName, setFullName] = useState('');
-  const [phoneCode, setPhoneCode] = useState('52');
+  const [businessName, setBusinessName] = useState('');
+  const [phoneCode, setPhoneCode] = useState('MX');
   const [phone, setPhone] = useState('');
   const [accountRole, setAccountRole] = useState('user');
   const [saving, setSaving] = useState(false);
@@ -1500,6 +1730,10 @@ function AuthForm({ setNotice }) {
       setNotice('El telefono debe tener exactamente 10 digitos.', 'error');
       return;
     }
+    if (mode === 'signup' && accountRole === 'seller' && businessName.trim().length < 3) {
+      setNotice('Escribe el nombre de tu negocio.', 'error');
+      return;
+    }
     setSaving(true);
     let result;
     try {
@@ -1509,7 +1743,7 @@ function AuthForm({ setNotice }) {
           : await supabase.auth.signUp({
               email,
               password,
-              options: { data: { full_name: fullName, whatsapp: `${phoneCode}${normalizedPhone}`, role: accountRole } },
+              options: { data: { full_name: fullName, whatsapp: `${getDialCode(phoneCode)}${normalizedPhone}`, role: accountRole, business_name: accountRole === 'seller' ? businessName.trim() : '' } },
             });
     } catch (error) {
       setSaving(false);
@@ -1518,7 +1752,7 @@ function AuthForm({ setNotice }) {
     }
     setSaving(false);
     if (result.error) return setNotice(result.error, 'error', mode);
-    if (result.data?.user) {
+    if (result.data?.user && (mode === 'login' || result.data.session)) {
       const profilePayload = {
         id: result.data.user.id,
         email: result.data.user.email ?? email,
@@ -1526,9 +1760,14 @@ function AuthForm({ setNotice }) {
       };
       if (mode === 'signup') {
         profilePayload.full_name = fullName;
-        profilePayload.whatsapp = `${phoneCode}${normalizedPhone}`;
+        profilePayload.whatsapp = `${getDialCode(phoneCode)}${normalizedPhone}`;
+        profilePayload.business_name = accountRole === 'seller' ? businessName.trim() : null;
+      } else if (accountRole === 'seller' && businessName.trim()) {
+        profilePayload.business_name = businessName.trim();
       }
-      await supabase.from('users').upsert(profilePayload);
+      const { error: profileError } = await supabase.from('users').upsert(profilePayload);
+      if (profileError) return setNotice(profileError, 'error');
+      await onAuthenticated(result.data.user.id);
     }
     if (mode === 'signup') {
       if (result.data?.session) {
@@ -1614,7 +1853,7 @@ function AuthForm({ setNotice }) {
             <div className="grid grid-cols-[8.5rem_1fr] gap-2">
               <select className="field" value={phoneCode} onChange={(event) => setPhoneCode(event.target.value)} aria-label="Lada">
                 {PHONE_CODES.map((code) => (
-                  <option key={`${code.country}-${code.value}`} value={code.value}>
+                  <option key={code.id} value={code.id}>
                     {code.label}
                   </option>
                 ))}
@@ -1630,6 +1869,17 @@ function AuthForm({ setNotice }) {
               />
             </div>
           </>
+        )}
+        {accountRole === 'seller' && (
+          <input
+            className="field"
+            required={mode === 'signup'}
+            minLength="3"
+            maxLength="100"
+            placeholder={mode === 'signup' ? 'Nombre de tu negocio' : 'Nombre de tu negocio (opcional)'}
+            value={businessName}
+            onChange={(event) => setBusinessName(event.target.value)}
+          />
         )}
         <input className="field" required type="email" placeholder="Correo UANL o personal" value={email} onChange={(event) => setEmail(event.target.value)} />
         <div className="grid grid-cols-[1fr_auto] gap-2">
@@ -1656,7 +1906,7 @@ function AuthForm({ setNotice }) {
 }
 
 function ProfileForm({ user, profile, onSaved, onSignOut, setNotice }) {
-  const [form, setForm] = useState({ full_name: '', whatsapp: '', faculty_id: '', avatar_url: '' });
+  const [form, setForm] = useState({ full_name: '', whatsapp: '', faculty_id: '', avatar_url: '', business_name: '', business_description: '' });
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   useEffect(() => {
@@ -1665,6 +1915,8 @@ function ProfileForm({ user, profile, onSaved, onSignOut, setNotice }) {
       whatsapp: profile?.whatsapp ?? user.user_metadata?.whatsapp ?? '',
       faculty_id: profile?.faculty_id ?? '',
       avatar_url: profile?.avatar_url ?? '',
+      business_name: profile?.business_name ?? user.user_metadata?.business_name ?? '',
+      business_description: profile?.business_description ?? '',
     });
   }, [profile?.id, user.id]);
 
@@ -1709,6 +1961,8 @@ function ProfileForm({ user, profile, onSaved, onSignOut, setNotice }) {
       whatsapp: form.whatsapp,
       faculty_id: form.faculty_id || null,
       avatar_url: form.avatar_url || null,
+      business_name: profile?.role === 'seller' ? form.business_name.trim() : null,
+      business_description: profile?.role === 'seller' ? form.business_description.trim() : null,
     });
     if (error) return setNotice(error, 'error');
     setNotice('Perfil guardado.', 'success');
@@ -1738,6 +1992,12 @@ function ProfileForm({ user, profile, onSaved, onSignOut, setNotice }) {
       </div>
       <input className="field" required placeholder="Nombre completo" value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} />
       <input className="field" placeholder="WhatsApp" value={form.whatsapp} onChange={(event) => setForm({ ...form, whatsapp: event.target.value })} />
+      {profile?.role === 'seller' && (
+        <>
+          <input className="field" required minLength="3" maxLength="100" placeholder="Nombre de tu negocio" value={form.business_name} onChange={(event) => setForm({ ...form, business_name: event.target.value })} />
+          <textarea className="field min-h-28" maxLength="500" placeholder="Descripcion de tu negocio" value={form.business_description} onChange={(event) => setForm({ ...form, business_description: event.target.value })} />
+        </>
+      )}
       <button className="primary-btn w-full">Guardar perfil</button>
       <button type="button" className="secondary-btn w-full" onClick={onSignOut}>Cerrar sesion</button>
     </form>
