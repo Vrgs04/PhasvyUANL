@@ -274,7 +274,7 @@ function App() {
   const [categories, setCategories] = useState([]);
   const [listings, setListings] = useState([]);
   const [selectedListing, setSelectedListing] = useState(null);
-  const [selectedFacultyId, setSelectedFacultyId] = useState('');
+  const [marketSelection, setMarketSelection] = useState(null);
   const [editingListing, setEditingListing] = useState(null);
   const [filters, setFilters] = useState(createEmptyFilters);
   const [loading, setLoading] = useState(true);
@@ -424,14 +424,14 @@ function App() {
   }
 
   function openFaculty(facultyId) {
-    if (!user) {
-      setView('profile');
-      notify('Inicia sesion para ver las publicaciones.', 'error');
-      return;
-    }
-    setSelectedFacultyId(facultyId);
-    setFilters((current) => ({ ...current, faculties: [facultyId] }));
-    setView('catalog');
+    setMarketSelection({ type: 'faculty', id: facultyId });
+    setView('market');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function openCampus(campus) {
+    setMarketSelection({ type: 'campus', id: campus.id });
+    setView('market');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -551,6 +551,7 @@ function App() {
               faculties={faculties}
               categories={categories}
               onOpenFaculty={openFaculty}
+              onOpenCampus={openCampus}
               setView={setView}
               user={user}
             />
@@ -571,13 +572,15 @@ function App() {
             />
           )}
 
-          {view === 'faculty' && (
-            <FacultyMarket
-              facultyId={selectedFacultyId || filters.faculties[0]}
+          {view === 'market' && marketSelection && (
+            <SelectionMarket
+              selection={marketSelection}
               faculties={faculties}
               listings={listings.filter((listing) => listing.status !== 'deleted')}
               onBack={() => setView('explore')}
               onOpen={setSelectedListing}
+              onLogin={() => setView('profile')}
+              user={user}
             />
           )}
 
@@ -785,7 +788,7 @@ function SetupWarning() {
   );
 }
 
-function Explore({ listings, filters, setFilters, faculties, categories, onOpenFaculty, setView, user }) {
+function Explore({ listings, filters, setFilters, faculties, categories, onOpenFaculty, onOpenCampus, setView, user }) {
   const sellerCount = new Set(listings.map((listing) => listing.seller_id)).size;
   const openCatalog = () => {
     if (!user) {
@@ -795,20 +798,11 @@ function Explore({ listings, filters, setFilters, faculties, categories, onOpenF
     setView('catalog');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
-  const applyCampus = (campus) => {
-    if (!user) {
-      setView('profile');
-      return;
-    }
-    setFilters((current) => ({ ...current, faculties: getFacultyIdsByNames(faculties, campus.names) }));
-    setView('catalog');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
 
   return (
     <div className="space-y-5">
       <IOSInstallPrompt />
-      <CampusTags onSelect={applyCampus} />
+      <CampusTags onSelect={onOpenCampus} />
       <FacultyTags faculties={faculties} selectedFaculties={filters.faculties} onOpenFaculty={onOpenFaculty} />
       <HeroCarousel onVisit={() => {
         setFilters(createEmptyFilters());
@@ -1145,36 +1139,50 @@ function Filters({ filters, setFilters, faculties, categories }) {
   );
 }
 
-function FacultyMarket({ facultyId, faculties, listings, onBack, onOpen }) {
-  const faculty = faculties.find((item) => item.id === facultyId);
-  const facultyListings = listings.filter((listing) => !facultyId || listing.faculty_id === facultyId);
-  const topSellers = getTopSellers(facultyListings);
-  const brand = FACULTY_BRANDS[faculty?.name] ?? { color: '#f97316', logo: '/faculties/uanl.jpg' };
+function SelectionMarket({ selection, faculties, listings, onBack, onOpen, onLogin, user }) {
+  const isCampus = selection.type === 'campus';
+  const campus = isCampus ? CAMPUS_GROUPS.find((item) => item.id === selection.id) : null;
+  const faculty = !isCampus ? faculties.find((item) => item.id === selection.id) : null;
+  const selectedFacultyIds = isCampus ? getFacultyIdsByNames(faculties, campus?.names ?? []) : [selection.id];
+  const selectedListings = listings.filter((listing) => selectedFacultyIds.includes(listing.faculty_id));
+  const topSellers = getTopSellers(selectedListings);
+  const parentCampus = !isCampus
+    ? FEATURED_CAMPUSES.find((item) => item.names.some((name) => name.toLowerCase() === faculty?.name?.toLowerCase()))
+    : campus;
+  const brand = FACULTY_BRANDS[faculty?.name] ?? { color: '#f97316', logo: campus?.logo ?? '/faculties/uanl.jpg' };
+  const title = isCampus ? campus?.label : faculty?.name;
+  const bannerImage = parentCampus?.image ?? '/campus/hero-campus.jpg';
 
   return (
     <div className="space-y-5">
-      <section className="dark-panel overflow-hidden p-5 md:p-7">
-        <button className="secondary-btn !border-white/10 !bg-white/10 !text-white" onClick={onBack}>
+      <section className="dark-panel relative min-h-[22rem] overflow-hidden p-5 md:min-h-[28rem] md:p-7">
+        <img src={bannerImage} alt="" className="absolute inset-0 h-full w-full object-cover opacity-65" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/35 to-black/20" />
+        <button className="secondary-btn relative z-10 !border-white/20 !bg-black/25 !text-white backdrop-blur-xl" onClick={onBack}>
           Volver
         </button>
-        <div className="mt-6 grid gap-5 md:grid-cols-[1fr_auto] md:items-end">
+        <div className="absolute inset-x-5 bottom-5 z-10 grid gap-5 md:inset-x-7 md:bottom-7 md:grid-cols-[1fr_auto] md:items-end">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-200">Explorar por facultad</p>
-            <h1 className="mt-2 text-4xl font-black tracking-tight md:text-6xl">{faculty?.name ?? 'UANL'}</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-              Todas las publicaciones activas de esta facultad, con vendedores destacados por calificacion y resenas reales.
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-200">{isCampus ? 'Campus UANL' : 'Facultad UANL'}</p>
+            <h1 className="mt-2 text-4xl font-black tracking-tight text-white md:text-6xl">{title ?? 'UANL'}</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/75">
+              Todos los productos publicados para {title ?? 'esta selección'}, reunidos en un solo lugar.
             </p>
           </div>
-          <div className="flex items-center gap-3 rounded-[22px] bg-white/10 p-3">
+          <div className="flex items-center gap-3 rounded-[22px] border border-white/15 bg-black/25 p-3 backdrop-blur-xl">
             <img src={brand.logo} alt="" className="h-14 w-14 rounded-full bg-white object-contain p-1" />
             <div>
-              <p className="text-3xl font-black">{facultyListings.length}</p>
+              <p className="text-3xl font-black text-white">{selectedListings.length}</p>
               <p className="text-xs font-bold text-white/60">publicaciones</p>
             </div>
           </div>
         </div>
       </section>
 
+      {!user ? (
+        <LoginGate onLogin={onLogin} />
+      ) : (
+        <>
       <section className="panel p-4 md:p-5">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
@@ -1184,7 +1192,7 @@ function FacultyMarket({ facultyId, faculties, listings, onBack, onOpen }) {
           <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-black text-campus">Top 5</span>
         </div>
         {topSellers.length === 0 ? (
-          <p className="rounded-3xl bg-orange-50 p-4 text-sm font-bold text-orange-900">Todavia no hay vendedores con publicaciones en esta facultad.</p>
+          <p className="rounded-3xl bg-orange-50 p-4 text-sm font-bold text-orange-900">Todavía no hay vendedores con publicaciones en esta selección.</p>
         ) : (
           <div className="grid gap-3 md:grid-cols-5">
             {topSellers.map((item, index) => (
@@ -1201,17 +1209,19 @@ function FacultyMarket({ facultyId, faculties, listings, onBack, onOpen }) {
         )}
       </section>
 
-      {facultyListings.length === 0 ? (
+      {selectedListings.length === 0 ? (
         <div className="panel p-8 text-center">
-          <p className="font-black">No hay publicaciones en esta facultad.</p>
-          <p className="mt-1 text-sm text-slate-500">Cuando alguien publique aqui apareceran en esta ventana.</p>
+          <p className="font-black">No hay publicaciones en esta selección.</p>
+          <p className="mt-1 text-sm text-slate-500">Cuando alguien publique aquí aparecerá en esta página.</p>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {facultyListings.map((listing) => (
+          {selectedListings.map((listing) => (
             <ListingCard key={listing.id} listing={listing} onOpen={() => onOpen(listing)} />
           ))}
         </div>
+      )}
+        </>
       )}
     </div>
   );
@@ -1829,20 +1839,17 @@ function AuthForm({ setNotice, onAuthenticated }) {
     setSaving(false);
     if (result.error) return setNotice(result.error, 'error', mode);
     if (result.data?.user && (mode === 'login' || result.data.session)) {
-      const profilePayload = {
-        id: result.data.user.id,
-        email: result.data.user.email ?? email,
-        role: accountRole,
-      };
       if (mode === 'signup') {
-        profilePayload.full_name = fullName;
-        profilePayload.whatsapp = `${getDialCode(phoneCode)}${normalizedPhone}`;
-        profilePayload.business_name = accountRole === 'seller' ? businessName.trim() : null;
-      } else if (accountRole === 'seller' && businessName.trim()) {
-        profilePayload.business_name = businessName.trim();
+        const { error: profileError } = await supabase.from('users').upsert({
+          id: result.data.user.id,
+          email: result.data.user.email ?? email,
+          role: accountRole,
+          full_name: fullName,
+          whatsapp: `${getDialCode(phoneCode)}${normalizedPhone}`,
+          business_name: accountRole === 'seller' ? businessName.trim() : null,
+        });
+        if (profileError) return setNotice(profileError, 'error');
       }
-      const { error: profileError } = await supabase.from('users').upsert(profilePayload);
-      if (profileError) return setNotice(profileError, 'error');
       await onAuthenticated(result.data.user.id);
     }
     if (mode === 'signup') {
@@ -1915,16 +1922,51 @@ function AuthForm({ setNotice, onAuthenticated }) {
         </p>
       </div>
       <form className="panel space-y-4 p-5 md:p-6" onSubmit={submit}>
-        <div className="grid grid-cols-2 gap-2 rounded-3xl bg-slate-100 p-1">
-          <button type="button" className={cx('rounded-2xl py-3 text-sm font-black transition', mode === 'login' && 'bg-white shadow-soft')} onClick={() => setMode('login')}>Login</button>
-          <button type="button" className={cx('rounded-2xl py-3 text-sm font-black transition', mode === 'signup' && 'bg-white shadow-soft')} onClick={() => setMode('signup')}>Registro</button>
-        </div>
-        <div className="grid grid-cols-2 gap-2 rounded-3xl bg-orange-50 p-1">
-          <button type="button" className={cx('rounded-2xl py-3 text-sm font-black transition', accountRole === 'user' && 'bg-white text-campus shadow-soft')} onClick={() => setAccountRole('user')}>Cliente</button>
-          <button type="button" className={cx('rounded-2xl py-3 text-sm font-black transition', accountRole === 'seller' && 'bg-white text-campus shadow-soft')} onClick={() => setAccountRole('seller')}>Vendedor</button>
+        <div className="grid grid-cols-2 border-b border-orange-100">
+          <button
+            type="button"
+            className={cx('border-b-4 px-3 py-3 text-sm font-black transition', mode === 'login' ? 'border-campus text-campus' : 'border-transparent text-slate-400')}
+            onClick={() => setMode('login')}
+          >
+            Iniciar sesión
+          </button>
+          <button
+            type="button"
+            className={cx('border-b-4 px-3 py-3 text-sm font-black transition', mode === 'signup' ? 'border-campus text-campus' : 'border-transparent text-slate-400')}
+            onClick={() => setMode('signup')}
+          >
+            Crear cuenta
+          </button>
         </div>
         {mode === 'signup' && (
           <>
+            <fieldset className="space-y-2">
+              <legend className="label">¿Cómo usarás Phasvy?</legend>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  className={cx('rounded-3xl border p-4 text-left transition', accountRole === 'user' ? 'border-campus bg-orange-50 shadow-soft' : 'border-slate-200 bg-white')}
+                  onClick={() => setAccountRole('user')}
+                >
+                  <span className="flex items-center justify-between gap-3">
+                    <span className="font-black">Cliente</span>
+                    <span className={cx('h-4 w-4 rounded-full border-4', accountRole === 'user' ? 'border-campus bg-white' : 'border-slate-300')} />
+                  </span>
+                  <span className="mt-2 block text-xs leading-5 text-slate-500">Explora productos y contacta vendedores.</span>
+                </button>
+                <button
+                  type="button"
+                  className={cx('rounded-3xl border p-4 text-left transition', accountRole === 'seller' ? 'border-campus bg-orange-50 shadow-soft' : 'border-slate-200 bg-white')}
+                  onClick={() => setAccountRole('seller')}
+                >
+                  <span className="flex items-center justify-between gap-3">
+                    <span className="font-black">Vendedor</span>
+                    <span className={cx('h-4 w-4 rounded-full border-4', accountRole === 'seller' ? 'border-campus bg-white' : 'border-slate-300')} />
+                  </span>
+                  <span className="mt-2 block text-xs leading-5 text-slate-500">Publica y administra productos de tu negocio.</span>
+                </button>
+              </div>
+            </fieldset>
             <input className="field" required placeholder="Nombre completo" value={fullName} onChange={(event) => setFullName(event.target.value)} />
             <div className="grid grid-cols-[8.5rem_1fr] gap-2">
               <select className="field" value={phoneCode} onChange={(event) => setPhoneCode(event.target.value)} aria-label="Lada">
@@ -1946,13 +1988,13 @@ function AuthForm({ setNotice, onAuthenticated }) {
             </div>
           </>
         )}
-        {accountRole === 'seller' && (
+        {mode === 'signup' && accountRole === 'seller' && (
           <input
             className="field"
-            required={mode === 'signup'}
+            required
             minLength="3"
             maxLength="100"
-            placeholder={mode === 'signup' ? 'Nombre de tu negocio' : 'Nombre de tu negocio (opcional)'}
+            placeholder="Nombre de tu negocio"
             value={businessName}
             onChange={(event) => setBusinessName(event.target.value)}
           />
