@@ -32,7 +32,8 @@ const CAMPUS_GROUPS = [
 const FEATURED_CAMPUSES = CAMPUS_GROUPS.filter((campus) => campus.image);
 const MAX_AVATAR_SIZE = 2 * 1024 * 1024;
 const MAX_LISTING_IMAGE_SIZE = 5 * 1024 * 1024;
-const MAX_LISTING_IMAGES = 8;
+const MAX_LISTING_IMAGES = 6;
+const ALLOWED_EMAIL_DOMAINS = new Set(['gmail.com', 'hotmail.com', 'outlook.com', 'uanl.edu.mx', 'yahoo.com', 'icloud.com']);
 const FACULTY_BRANDS = {
   FIME: { color: '#006b4f', logo: '/faculties/fime.jpg' },
   FACPyA: { color: '#0f5ea8', logo: '/faculties/facpya.jpg' },
@@ -128,6 +129,27 @@ function cx(...classes) {
 
 function normalizePhone(phone) {
   return phone.replace(/[^\d]/g, '').replace(/^0+/, '');
+}
+
+function sanitizeSingleLine(value, maxLength = 500) {
+  return String(value ?? '')
+    .replace(/[\u0000-\u001F\u007F<>]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+}
+
+function sanitizeMultiline(value, maxLength = 3000) {
+  return String(value ?? '')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F<>]/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+    .slice(0, maxLength);
+}
+
+function getEmailDomain(value) {
+  return String(value ?? '').trim().toLowerCase().split('@').pop() ?? '';
 }
 
 function splitPhoneNumber(phone) {
@@ -420,10 +442,18 @@ function App() {
     const sellerIds = [...new Set(rawListings.map((listing) => listing.seller_id).filter(Boolean))];
     const listingIds = rawListings.map((listing) => listing.id).filter(Boolean);
 
-    const [{ data: sellers }, { data: reviews }] = await Promise.all([
-      sellerIds.length ? supabase.from('users').select('id, email, full_name, whatsapp, avatar_url, business_name, business_description').in('id', sellerIds) : { data: [] },
+    const [sellerResult, { data: reviews }] = await Promise.all([
+      sellerIds.length ? supabase.rpc('get_public_seller_profiles', { seller_ids: sellerIds }) : { data: [] },
       listingIds.length ? supabase.from('listing_reviews').select('*').in('listing_id', listingIds).eq('status', 'visible') : { data: [] },
     ]);
+    let sellers = sellerResult.data ?? [];
+    if (sellerResult.error && sellerIds.length) {
+      const legacyResult = await supabase
+        .from('users')
+        .select('id, full_name, avatar_url, business_name, business_description')
+        .in('id', sellerIds);
+      sellers = legacyResult.data ?? [];
+    }
 
     const sellerMap = new Map((sellers ?? []).map((seller) => [seller.id, seller]));
     const reviewsByListing = new Map();
@@ -478,7 +508,7 @@ function App() {
       reviewer_id: user.id,
       seller_id: listing.seller_id,
       rating: Number(rating),
-      comment: comment.trim(),
+      comment: sanitizeMultiline(comment, 360),
       status: 'visible',
     };
     const existingReviewId = getReviews(listing).find((review) => review.reviewer_id === user.id)?.id;
@@ -548,7 +578,7 @@ function App() {
       {notice && (
         <button
           className={cx(
-            'fixed left-1/2 top-5 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-[28px] border px-5 py-4 text-center text-sm font-black text-white shadow-ios backdrop-blur-2xl',
+            'app-notice fixed left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-[28px] border px-5 py-4 text-center text-sm font-black text-white shadow-ios backdrop-blur-2xl',
             notice.type === 'error' ? 'border-red-300/40 bg-red-600/95' : 'border-emerald-300/40 bg-emerald-600/95',
           )}
           onClick={() => setNotice(null)}
@@ -1584,6 +1614,10 @@ function ListingForm({ user, faculties, categories, editing, onDone, setNotice }
 
   async function saveListing(event) {
     event.preventDefault();
+    if (imageItems.length < 1) {
+      setNotice('Agrega al menos una foto del producto.', 'error');
+      return;
+    }
     if (form.description.trim().length < 10) {
       setNotice('La descripcion debe tener al menos 10 caracteres.', 'error');
       return;
@@ -1595,13 +1629,13 @@ function ListingForm({ user, faculties, categories, editing, onDone, setNotice }
     setSaving(true);
 
     const payload = {
-      title: form.title.trim(),
-      description: form.description.trim(),
+      title: sanitizeSingleLine(form.title, 120),
+      description: sanitizeMultiline(form.description, 3000),
       price: Number(form.price),
       faculty_id: form.faculty_id,
       category_id: form.category_id,
       whatsapp: `${getDialCode(phoneCode)}${phone}`,
-      contact_note: form.contact_note,
+      contact_note: sanitizeSingleLine(form.contact_note, 300),
       seller_id: user.id,
       status: editing?.status ?? 'active',
     };
@@ -1704,7 +1738,7 @@ function ListingForm({ user, faculties, categories, editing, onDone, setNotice }
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="font-black">Imagenes</p>
-            <p className="text-xs font-semibold text-slate-500">La primera sera la portada. Usa las flechas para cambiar el orden.</p>
+            <p className="text-xs font-semibold text-slate-500">Obligatorio: mínimo 1 y máximo {MAX_LISTING_IMAGES}. La primera será la portada.</p>
           </div>
           <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-campus">{imageItems.length}/{MAX_LISTING_IMAGES}</span>
         </div>
@@ -1863,6 +1897,9 @@ function AuthForm({ setNotice, onAuthenticated }) {
     else if (password.length < 6) errors.password = 'La contraseña debe tener al menos 6 caracteres.';
 
     if (mode === 'signup') {
+      if (!ALLOWED_EMAIL_DOMAINS.has(getEmailDomain(normalizedEmail))) {
+        errors.email = 'Usa un correo de Gmail, Hotmail, Outlook, UANL, Yahoo o iCloud.';
+      }
       if (fullName.trim().length < 3) errors.fullName = 'Escribe tu nombre completo.';
       if (normalizedPhone.length !== 10) errors.phone = 'El WhatsApp debe tener exactamente 10 dígitos.';
       if (password !== confirmPassword) errors.confirmPassword = 'Las contraseñas no coinciden.';
@@ -1897,11 +1934,18 @@ function AuthForm({ setNotice, onAuthenticated }) {
     try {
       result =
         mode === 'login'
-          ? await supabase.auth.signInWithPassword({ email, password })
+          ? await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password })
           : await supabase.auth.signUp({
-              email,
+              email: email.trim().toLowerCase(),
               password,
-              options: { data: { full_name: fullName, whatsapp: `${getDialCode(phoneCode)}${normalizedPhone}`, role: accountRole, business_name: accountRole === 'seller' ? businessName.trim() : '' } },
+              options: {
+                data: {
+                  full_name: sanitizeSingleLine(fullName, 120),
+                  whatsapp: `${getDialCode(phoneCode)}${normalizedPhone}`,
+                  role: accountRole,
+                  business_name: accountRole === 'seller' ? sanitizeSingleLine(businessName, 100) : '',
+                },
+              },
             });
     } catch (error) {
       setSaving(false);
@@ -1916,9 +1960,9 @@ function AuthForm({ setNotice, onAuthenticated }) {
           id: result.data.user.id,
           email: result.data.user.email ?? email,
           role: accountRole,
-          full_name: fullName,
+          full_name: sanitizeSingleLine(fullName, 120),
           whatsapp: `${getDialCode(phoneCode)}${normalizedPhone}`,
-          business_name: accountRole === 'seller' ? businessName.trim() : null,
+          business_name: accountRole === 'seller' ? sanitizeSingleLine(businessName, 100) : null,
         });
         if (profileError) {
           setFieldErrors({ form: getErrorMessage(profileError) });
@@ -2214,12 +2258,12 @@ function ProfileForm({ user, profile, onSaved, onSignOut, setNotice }) {
     const { error } = await supabase.from('users').upsert({
       id: user.id,
       email: user.email,
-      full_name: form.full_name,
-      whatsapp: form.whatsapp,
+      full_name: sanitizeSingleLine(form.full_name, 120),
+      whatsapp: normalizePhone(form.whatsapp).slice(0, 15),
       faculty_id: form.faculty_id || null,
       avatar_url: form.avatar_url || null,
-      business_name: profile?.role === 'seller' ? form.business_name.trim() : null,
-      business_description: profile?.role === 'seller' ? form.business_description.trim() : null,
+      business_name: profile?.role === 'seller' ? sanitizeSingleLine(form.business_name, 100) : null,
+      business_description: profile?.role === 'seller' ? sanitizeMultiline(form.business_description, 600) : null,
     });
     if (error) return setNotice(error, 'error');
     setNotice('Perfil guardado.', 'success');

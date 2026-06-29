@@ -16,6 +16,7 @@ html {
   background: #fffaf4;
   color-scheme: light;
   overscroll-behavior-y: none;
+  touch-action: manipulation;
 }
 
 body {
@@ -50,6 +51,18 @@ textarea {
   font: inherit;
 }
 
+button,
+a,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+.app-notice {
+  top: calc(env(safe-area-inset-top) + 1rem);
+}
+
 .promo-safe-top {
   padding-top: env(safe-area-inset-top);
 }
@@ -74,6 +87,14 @@ textarea {
 
 .filter-chips {
   scroll-padding-inline: 0.25rem;
+}
+
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
 }
 
 .no-scrollbar::-webkit-scrollbar {
