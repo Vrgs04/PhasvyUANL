@@ -10,14 +10,16 @@ const currency = new Intl.NumberFormat('es-MX', {
 });
 
 const navItems = [
-  { id: 'catalog', label: 'Publicaciones', icon: 'P' },
-  { id: 'profile', label: 'Perfil', icon: 'P' },
+  { id: 'explore', label: 'Home', icon: 'home' },
+  { id: 'catalog', label: 'Publicaciones', icon: 'grid' },
+  { id: 'profile', label: 'Perfil', icon: 'user' },
 ];
 const sellerNavItems = [
-  { id: 'catalog', label: 'Publicaciones', icon: 'P' },
-  { id: 'create', label: 'Publicar', icon: '+' },
-  { id: 'mine', label: 'Mias', icon: 'M' },
-  { id: 'profile', label: 'Perfil', icon: 'P' },
+  { id: 'explore', label: 'Home', icon: 'home' },
+  { id: 'catalog', label: 'Publicaciones', icon: 'grid' },
+  { id: 'create', label: 'Publicar', icon: 'plus' },
+  { id: 'mine', label: 'Mias', icon: 'bag' },
+  { id: 'profile', label: 'Perfil', icon: 'user' },
 ];
 
 const QUICK_FACULTIES = ['FIME', 'FACPyA', 'FACDyC', 'Medicina', 'FAPSI', 'FARQ', 'Odontologia', 'FCQ'];
@@ -195,7 +197,23 @@ function isSuspiciousReview(text) {
 
 function getNavigationItems(isSeller, isAdmin) {
   const items = isSeller || isAdmin ? sellerNavItems : navItems;
-  return isAdmin ? [...items, { id: 'admin', label: 'Admin', icon: 'A' }] : items;
+  return isAdmin ? [...items, { id: 'admin', label: 'Admin', icon: 'shield' }] : items;
+}
+
+function NavIcon({ name }) {
+  const paths = {
+    home: <><path d="M3 10.8 12 3l9 7.8" /><path d="M5.5 9.5V21h13V9.5M9.5 21v-7h5v7" /></>,
+    grid: <><rect x="3" y="3" width="7" height="7" rx="2" /><rect x="14" y="3" width="7" height="7" rx="2" /><rect x="3" y="14" width="7" height="7" rx="2" /><rect x="14" y="14" width="7" height="7" rx="2" /></>,
+    plus: <><circle cx="12" cy="12" r="9" /><path d="M12 8v8M8 12h8" /></>,
+    bag: <><path d="M5 8h14l-1 13H6L5 8Z" /><path d="M9 9V6a3 3 0 0 1 6 0v3" /></>,
+    user: <><circle cx="12" cy="8" r="4" /><path d="M4.5 21a7.5 7.5 0 0 1 15 0" /></>,
+    shield: <><path d="M12 3 20 6v6c0 5-3.4 8-8 9-4.6-1-8-4-8-9V6l8-3Z" /><path d="m9 12 2 2 4-4" /></>,
+  };
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      {paths[name] ?? paths.grid}
+    </svg>
+  );
 }
 
 function getFacultyIdsByNames(faculties, names) {
@@ -523,7 +541,7 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen pb-24 text-ink md:pb-10">
+    <div className="min-h-screen pb-32 text-ink md:pb-10">
       <PromoTicker />
       <Header user={user} profile={profile} view={view} onNavigate={navigate} isAdmin={isAdmin} isSeller={isSeller} />
 
@@ -684,10 +702,12 @@ function App() {
 function PromoTicker() {
   const text = 'Publica gratis en Phasvy Campus - Vendedores destacados esta semana: Cafe FIME, Postres FACPyA, Tacos FACDyC - Compra dentro de la UANL sin envios ni pagos en linea';
   return (
-    <div className="overflow-hidden border-b border-orange-300/20 bg-orange-600 py-2 text-xs font-black uppercase tracking-[0.16em] text-white">
-      <div className="ticker-track whitespace-nowrap">
-        <span className="mx-8">{text}</span>
-        <span className="mx-8">{text}</span>
+    <div className="promo-safe-top bg-orange-600">
+      <div className="overflow-hidden border-b border-orange-300/20 py-2 text-xs font-black uppercase tracking-[0.16em] text-white">
+        <div className="ticker-track whitespace-nowrap">
+          <span className="mx-8">{text}</span>
+          <span className="mx-8">{text}</span>
+        </div>
       </div>
     </div>
   );
@@ -699,7 +719,7 @@ function Header({ user, profile, view, onNavigate, isAdmin, isSeller }) {
   const avatar = profile?.avatar_url;
 
   return (
-    <header className="sticky top-0 z-20 px-3 py-3 md:px-6">
+    <header className="app-header sticky z-20 px-3 py-3 md:px-6">
       <div className="liquid mx-auto grid max-w-7xl gap-3 rounded-[28px] px-3 py-3 md:grid-cols-[minmax(190px,0.75fr)_auto_minmax(190px,0.75fr)] md:items-center">
         <button
           className="flex min-w-0 items-center gap-3 rounded-3xl px-2 py-1 text-left transition hover:bg-white/10"
@@ -742,7 +762,7 @@ function Header({ user, profile, view, onNavigate, isAdmin, isSeller }) {
 }
 
 function Sidebar({ view, setView, isAdmin }) {
-  const items = isAdmin ? [...navItems, { id: 'admin', label: 'Admin', icon: 'A' }] : navItems;
+  const items = isAdmin ? [...navItems, { id: 'admin', label: 'Admin', icon: 'shield' }] : navItems;
   return (
     <nav className="panel sticky top-24 space-y-2 p-3">
       {items.map((item) => (
@@ -751,7 +771,7 @@ function Sidebar({ view, setView, isAdmin }) {
           className={cx('flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-bold', view === item.id ? 'bg-ink text-white' : 'text-slate-600 hover:bg-slate-50')}
           onClick={() => setView(item.id)}
         >
-          <span className="grid h-7 w-7 place-items-center rounded-full bg-white/20">{item.icon}</span>
+          <span className="grid h-7 w-7 place-items-center rounded-full bg-white/20"><NavIcon name={item.icon} /></span>
           {item.label}
         </button>
       ))}
@@ -762,16 +782,16 @@ function Sidebar({ view, setView, isAdmin }) {
 function MobileNav({ view, setView, isAdmin, isSeller }) {
   const items = getNavigationItems(isSeller, isAdmin);
   return (
-    <nav className="safe-bottom fixed bottom-0 left-0 right-0 z-40 px-3 pb-3 md:hidden">
-      <div className={cx('liquid mx-auto grid max-w-md gap-1 rounded-[26px] p-1.5', items.length === 5 ? 'grid-cols-5' : items.length === 4 ? 'grid-cols-4' : items.length === 3 ? 'grid-cols-3' : 'grid-cols-2')}>
+    <nav className="mobile-nav-shell fixed bottom-0 left-0 right-0 z-40 md:hidden">
+      <div className={cx('mobile-nav-panel liquid mx-auto grid max-w-md gap-1 rounded-[24px] p-1.5', items.length === 6 ? 'grid-cols-6' : items.length === 5 ? 'grid-cols-5' : items.length === 4 ? 'grid-cols-4' : 'grid-cols-3')}>
         {items.map((item) => (
           <button
             key={item.id}
-            className={cx('rounded-2xl px-2 py-2 text-xs font-black transition', view === item.id ? 'bg-campus text-white' : 'text-slate-500')}
+            className={cx('mobile-nav-button min-w-0 rounded-2xl px-1 py-2 text-[10px] font-black transition', view === item.id ? 'bg-campus text-white shadow-soft' : 'text-slate-500')}
             onClick={() => setView(item.id)}
           >
-            <span className="mx-auto mb-1 grid h-5 w-5 place-items-center rounded-full text-[10px] leading-none">{item.icon}</span>
-            {item.label}
+            <span className="mx-auto mb-1 block h-5 w-5"><NavIcon name={item.icon} /></span>
+            <span className="block truncate">{item.label}</span>
           </button>
         ))}
       </div>
@@ -825,7 +845,7 @@ function CatalogView({ user, loading, listings, filters, setFilters, faculties, 
           <h1 className="mt-2 text-3xl font-black md:text-4xl">Todas las publicaciones</h1>
           <p className="mt-2 text-sm text-slate-500">Busca y filtra productos por categoría y facultad.</p>
         </div>
-        <button className="secondary-btn" type="button" onClick={onBack}>Volver al inicio</button>
+        <button className="secondary-btn" type="button" onClick={onBack}>Volver</button>
       </section>
 
       <Filters filters={filters} setFilters={setFilters} faculties={faculties} categories={categories} />
@@ -1072,7 +1092,7 @@ function Filters({ filters, setFilters, faculties, categories }) {
   }).filter((item) => item.faculty);
 
   return (
-    <div className="panel mx-auto max-w-6xl space-y-3 p-4">
+    <div className="panel mx-auto w-full max-w-6xl space-y-4 p-4 md:p-5">
       <div className="flex items-center justify-between gap-3">
         <p className="label">Filtrar publicaciones</p>
         <button className="text-sm font-black text-campus underline" type="button" onClick={() => setFilters(createEmptyFilters())}>
@@ -1080,7 +1100,7 @@ function Filters({ filters, setFilters, faculties, categories }) {
         </button>
       </div>
       {quickFaculties.length > 0 && (
-        <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
+        <div className="filter-chips no-scrollbar flex gap-2 overflow-x-auto pb-2 md:flex-wrap md:overflow-visible">
           <button
             className={cx('chip', selectedFacultyIds.length === 0 && 'chip-active')}
             type="button"
@@ -1115,7 +1135,7 @@ function Filters({ filters, setFilters, faculties, categories }) {
         </div>
       )}
       <input className="field" placeholder="Buscar libros, calculadora, comida, asesorias..." value={filters.q} onChange={(event) => update('q', event.target.value)} />
-      <div className="grid gap-3 md:grid-cols-[1.1fr_1.1fr_0.8fr_0.8fr]">
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <select className="field" value="" onChange={(event) => event.target.value && toggleFaculty(event.target.value)}>
           <option value="">Agregar facultad...</option>
           {faculties.map((faculty) => (
@@ -1770,7 +1790,7 @@ function InfoPage({ page, onBack }) {
     <div className="mx-auto max-w-4xl space-y-5">
       <section className="dark-panel p-6 md:p-8">
         <button className="secondary-btn !border-white/10 !bg-white/10 !text-white" onClick={onBack}>
-          Volver al inicio
+          Volver
         </button>
         <p className="mt-8 text-xs font-black uppercase tracking-[0.16em] text-orange-200">{page.eyebrow}</p>
         <h1 className="mt-3 text-4xl font-black tracking-tight md:text-6xl">{page.title}</h1>
@@ -1790,6 +1810,15 @@ function Profile({ user, profile, onSaved, onAuthenticated, onSignOut, setNotice
   return <ProfileForm user={user} profile={profile} onSaved={onSaved} onSignOut={onSignOut} setNotice={setNotice} />;
 }
 
+function AuthFieldError({ id, message }) {
+  if (!message) return null;
+  return (
+    <p id={id} role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
+      {message}
+    </p>
+  );
+}
+
 function AuthForm({ setNotice, onAuthenticated }) {
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
@@ -1804,22 +1833,65 @@ function AuthForm({ setNotice, onAuthenticated }) {
   const [saving, setSaving] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
   const [showMailHelp, setShowMailHelp] = useState(false);
+  const [verificationError, setVerificationError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  const clearFieldError = (field) => {
+    setFieldErrors((current) => {
+      if (!current[field] && !current.form) return current;
+      const next = { ...current };
+      delete next[field];
+      delete next.form;
+      return next;
+    });
+  };
+
+  const changeMode = (nextMode) => {
+    setMode(nextMode);
+    setFieldErrors({});
+  };
+
+  function validateAuthForm() {
+    const errors = {};
+    const normalizedEmail = email.trim();
+    const normalizedPhone = phone.replace(/\D/g, '');
+
+    if (!normalizedEmail) errors.email = 'Escribe tu correo.';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) errors.email = 'Escribe un correo válido.';
+
+    if (!password) errors.password = 'Escribe tu contraseña.';
+    else if (password.length < 6) errors.password = 'La contraseña debe tener al menos 6 caracteres.';
+
+    if (mode === 'signup') {
+      if (fullName.trim().length < 3) errors.fullName = 'Escribe tu nombre completo.';
+      if (normalizedPhone.length !== 10) errors.phone = 'El WhatsApp debe tener exactamente 10 dígitos.';
+      if (password !== confirmPassword) errors.confirmPassword = 'Las contraseñas no coinciden.';
+      if (accountRole === 'seller' && businessName.trim().length < 3) errors.businessName = 'Escribe el nombre de tu negocio.';
+    }
+
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  }
+
+  function showAuthFailure(error, context) {
+    const rawMessage = String(error?.message ?? error ?? '').toLowerCase();
+    const message = getErrorMessage(error, context);
+    let field = 'form';
+
+    if (rawMessage.includes('invalid login credentials')) field = 'password';
+    else if (rawMessage.includes('email') || rawMessage.includes('user already registered')) field = 'email';
+    else if (rawMessage.includes('password')) field = 'password';
+    else if (rawMessage.includes('phone') || rawMessage.includes('whatsapp')) field = 'phone';
+    else if (rawMessage.includes('business')) field = 'businessName';
+
+    setFieldErrors({ [field]: message });
+  }
 
   async function submit(event) {
     event.preventDefault();
+    if (!validateAuthForm()) return;
     const normalizedPhone = phone.replace(/\D/g, '');
-    if (mode === 'signup' && password !== confirmPassword) {
-      setNotice('Las contrasenas no coinciden.', 'error');
-      return;
-    }
-    if (mode === 'signup' && normalizedPhone.length !== 10) {
-      setNotice('El telefono debe tener exactamente 10 digitos.', 'error');
-      return;
-    }
-    if (mode === 'signup' && accountRole === 'seller' && businessName.trim().length < 3) {
-      setNotice('Escribe el nombre de tu negocio.', 'error');
-      return;
-    }
+    setFieldErrors({});
     setSaving(true);
     let result;
     try {
@@ -1833,11 +1905,11 @@ function AuthForm({ setNotice, onAuthenticated }) {
             });
     } catch (error) {
       setSaving(false);
-      setNotice(error, 'error', mode);
+      showAuthFailure(error, mode);
       return;
     }
     setSaving(false);
-    if (result.error) return setNotice(result.error, 'error', mode);
+    if (result.error) return showAuthFailure(result.error, mode);
     if (result.data?.user && (mode === 'login' || result.data.session)) {
       if (mode === 'signup') {
         const { error: profileError } = await supabase.from('users').upsert({
@@ -1848,7 +1920,10 @@ function AuthForm({ setNotice, onAuthenticated }) {
           whatsapp: `${getDialCode(phoneCode)}${normalizedPhone}`,
           business_name: accountRole === 'seller' ? businessName.trim() : null,
         });
-        if (profileError) return setNotice(profileError, 'error');
+        if (profileError) {
+          setFieldErrors({ form: getErrorMessage(profileError) });
+          return;
+        }
       }
       await onAuthenticated(result.data.user.id);
     }
@@ -1886,19 +1961,21 @@ function AuthForm({ setNotice, onAuthenticated }) {
               try {
                 result = await supabase.auth.signInWithPassword({ email, password });
               } catch (error) {
-                setNotice(error, 'error', 'login');
+                setVerificationError(getErrorMessage(error, 'login'));
                 return;
               }
               if (result.error) {
-                setNotice(result.error, 'error', 'login');
+                setVerificationError(getErrorMessage(result.error, 'login'));
                 return;
               }
+              setVerificationError('');
               setVerificationSent(false);
               setMode('login');
             }}
           >
             Ya lo recibi
           </button>
+          {verificationError && <AuthFieldError id="verification-error" message={verificationError} />}
           <button className="secondary-btn w-full" onClick={() => setShowMailHelp(true)}>
             No me llego ningun correo
           </button>
@@ -1921,19 +1998,20 @@ function AuthForm({ setNotice, onAuthenticated }) {
           Publica, guarda contacto y administra tus anuncios desde un perfil simple. Todo pensado para alumnos y entregas dentro del campus.
         </p>
       </div>
-      <form className="panel space-y-4 p-5 md:p-6" onSubmit={submit}>
+      <form className="panel space-y-4 p-5 md:p-6" onSubmit={submit} noValidate>
+        <AuthFieldError id="auth-form-error" message={fieldErrors.form} />
         <div className="grid grid-cols-2 border-b border-orange-100">
           <button
             type="button"
             className={cx('border-b-4 px-3 py-3 text-sm font-black transition', mode === 'login' ? 'border-campus text-campus' : 'border-transparent text-slate-400')}
-            onClick={() => setMode('login')}
+            onClick={() => changeMode('login')}
           >
             Iniciar sesión
           </button>
           <button
             type="button"
             className={cx('border-b-4 px-3 py-3 text-sm font-black transition', mode === 'signup' ? 'border-campus text-campus' : 'border-transparent text-slate-400')}
-            onClick={() => setMode('signup')}
+            onClick={() => changeMode('signup')}
           >
             Crear cuenta
           </button>
@@ -1946,7 +2024,10 @@ function AuthForm({ setNotice, onAuthenticated }) {
                 <button
                   type="button"
                   className={cx('rounded-3xl border p-4 text-left transition', accountRole === 'user' ? 'border-campus bg-orange-50 shadow-soft' : 'border-slate-200 bg-white')}
-                  onClick={() => setAccountRole('user')}
+                  onClick={() => {
+                    setAccountRole('user');
+                    clearFieldError('businessName');
+                  }}
                 >
                   <span className="flex items-center justify-between gap-3">
                     <span className="font-black">Cliente</span>
@@ -1957,7 +2038,10 @@ function AuthForm({ setNotice, onAuthenticated }) {
                 <button
                   type="button"
                   className={cx('rounded-3xl border p-4 text-left transition', accountRole === 'seller' ? 'border-campus bg-orange-50 shadow-soft' : 'border-slate-200 bg-white')}
-                  onClick={() => setAccountRole('seller')}
+                  onClick={() => {
+                    setAccountRole('seller');
+                    clearFieldError('businessName');
+                  }}
                 >
                   <span className="flex items-center justify-between gap-3">
                     <span className="font-black">Vendedor</span>
@@ -1967,7 +2051,19 @@ function AuthForm({ setNotice, onAuthenticated }) {
                 </button>
               </div>
             </fieldset>
-            <input className="field" required placeholder="Nombre completo" value={fullName} onChange={(event) => setFullName(event.target.value)} />
+            <AuthFieldError id="full-name-error" message={fieldErrors.fullName} />
+            <input
+              className="field"
+              aria-invalid={Boolean(fieldErrors.fullName)}
+              aria-describedby={fieldErrors.fullName ? 'full-name-error' : undefined}
+              placeholder="Nombre completo"
+              value={fullName}
+              onChange={(event) => {
+                setFullName(event.target.value);
+                clearFieldError('fullName');
+              }}
+            />
+            <AuthFieldError id="phone-error" message={fieldErrors.phone} />
             <div className="grid grid-cols-[8.5rem_1fr] gap-2">
               <select className="field" value={phoneCode} onChange={(event) => setPhoneCode(event.target.value)} aria-label="Lada">
                 {PHONE_CODES.map((code) => (
@@ -1978,44 +2074,87 @@ function AuthForm({ setNotice, onAuthenticated }) {
               </select>
               <input
                 className="field"
-                required
+                aria-invalid={Boolean(fieldErrors.phone)}
+                aria-describedby={fieldErrors.phone ? 'phone-error' : undefined}
                 inputMode="numeric"
                 maxLength="10"
                 placeholder="WhatsApp 10 digitos"
                 value={phone}
-                onChange={(event) => setPhone(event.target.value.replace(/\D/g, '').slice(0, 10))}
+                onChange={(event) => {
+                  setPhone(event.target.value.replace(/\D/g, '').slice(0, 10));
+                  clearFieldError('phone');
+                }}
               />
             </div>
           </>
         )}
         {mode === 'signup' && accountRole === 'seller' && (
+          <>
+            <AuthFieldError id="business-name-error" message={fieldErrors.businessName} />
+            <input
+              className="field"
+              aria-invalid={Boolean(fieldErrors.businessName)}
+              aria-describedby={fieldErrors.businessName ? 'business-name-error' : undefined}
+              minLength="3"
+              maxLength="100"
+              placeholder="Nombre de tu negocio"
+              value={businessName}
+              onChange={(event) => {
+                setBusinessName(event.target.value);
+                clearFieldError('businessName');
+              }}
+            />
+          </>
+        )}
+        <AuthFieldError id="email-error" message={fieldErrors.email} />
+        <input
+          className="field"
+          aria-invalid={Boolean(fieldErrors.email)}
+          aria-describedby={fieldErrors.email ? 'email-error' : undefined}
+          type="email"
+          placeholder="Correo UANL o personal"
+          value={email}
+          onChange={(event) => {
+            setEmail(event.target.value);
+            clearFieldError('email');
+          }}
+        />
+        <AuthFieldError id="password-error" message={fieldErrors.password} />
+        <div className="grid grid-cols-[1fr_auto] gap-2">
           <input
             className="field"
-            required
-            minLength="3"
-            maxLength="100"
-            placeholder="Nombre de tu negocio"
-            value={businessName}
-            onChange={(event) => setBusinessName(event.target.value)}
+            aria-invalid={Boolean(fieldErrors.password)}
+            aria-describedby={fieldErrors.password ? 'password-error' : undefined}
+            type={showPassword ? 'text' : 'password'}
+            minLength="6"
+            placeholder="Contraseña"
+            value={password}
+            onChange={(event) => {
+              setPassword(event.target.value);
+              clearFieldError('password');
+            }}
           />
-        )}
-        <input className="field" required type="email" placeholder="Correo UANL o personal" value={email} onChange={(event) => setEmail(event.target.value)} />
-        <div className="grid grid-cols-[1fr_auto] gap-2">
-          <input className="field" required type={showPassword ? 'text' : 'password'} minLength="6" placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} />
           <button className="secondary-btn !px-4" type="button" onClick={() => setShowPassword((current) => !current)}>
             {showPassword ? 'Ocultar' : 'Ver'}
           </button>
         </div>
         {mode === 'signup' && (
-          <input
-            className="field"
-            required
-            type={showPassword ? 'text' : 'password'}
-            minLength="6"
-            placeholder="Repetir password"
-            value={confirmPassword}
-            onChange={(event) => setConfirmPassword(event.target.value)}
-          />
+          <>
+            <AuthFieldError id="confirm-password-error" message={fieldErrors.confirmPassword} />
+            <input
+              className="field"
+              aria-invalid={Boolean(fieldErrors.confirmPassword)}
+              aria-describedby={fieldErrors.confirmPassword ? 'confirm-password-error' : undefined}
+              type={showPassword ? 'text' : 'password'}
+              minLength="6"
+              placeholder="Repetir contraseña"
+              value={confirmPassword}
+              onChange={(event) => {
+                setConfirmPassword(event.target.value);
+                clearFieldError('confirmPassword');
+              }}
+            />
+          </>
         )}
         <button className="primary-btn w-full" disabled={saving}>{saving ? 'Procesando...' : mode === 'login' ? 'Entrar' : 'Crear cuenta'}</button>
       </form>

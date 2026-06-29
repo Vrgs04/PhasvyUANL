@@ -3,8 +3,8 @@
 @tailwind utilities;
 
 :root {
-  color: #f8fafc;
-  background: #05070b;
+  color: #0f172a;
+  background: #fffaf4;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -15,13 +15,13 @@ html {
   min-height: 100%;
   background: #fffaf4;
   color-scheme: light;
+  overscroll-behavior-y: none;
 }
 
 body {
   min-height: 100vh;
   min-height: 100dvh;
   margin: 0;
-  padding-top: env(safe-area-inset-top);
   color: #f8fafc;
   background:
     linear-gradient(180deg, #fffaf4 0%, #ffffff 32%, #fff7ed 100%);
@@ -50,8 +50,30 @@ textarea {
   font: inherit;
 }
 
-.safe-bottom {
-  padding-bottom: max(env(safe-area-inset-bottom), 0.75rem);
+.promo-safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+.app-header {
+  top: env(safe-area-inset-top);
+}
+
+.mobile-nav-shell {
+  padding: 0.5rem max(0.75rem, env(safe-area-inset-right)) max(0.5rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-left));
+  background: linear-gradient(180deg, transparent, rgba(255, 250, 244, 0.96) 32%);
+}
+
+.mobile-nav-panel {
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.mobile-nav-button svg {
+  height: 100%;
+  width: 100%;
+}
+
+.filter-chips {
+  scroll-padding-inline: 0.25rem;
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -83,7 +105,7 @@ textarea {
   }
 
   .field {
-    @apply w-full rounded-2xl border border-orange-100 bg-white/90 px-4 py-3 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-campus focus:ring-4 focus:ring-campus/10;
+    @apply min-w-0 w-full rounded-2xl border border-orange-100 bg-white/90 px-4 py-3 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-campus focus:ring-4 focus:ring-campus/10;
   }
 
   .label {
