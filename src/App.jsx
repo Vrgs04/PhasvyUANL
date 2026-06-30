@@ -11,12 +11,12 @@ const currency = new Intl.NumberFormat('es-MX', {
 
 const navItems = [
   { id: 'explore', label: 'Home', icon: 'home' },
-  { id: 'catalog', label: 'Publicaciones', icon: 'grid' },
+  { id: 'catalog', label: 'Explorar', icon: 'grid' },
   { id: 'profile', label: 'Perfil', icon: 'user' },
 ];
 const sellerNavItems = [
   { id: 'explore', label: 'Home', icon: 'home' },
-  { id: 'catalog', label: 'Publicaciones', icon: 'grid' },
+  { id: 'catalog', label: 'Explorar', icon: 'grid' },
   { id: 'create', label: 'Publicar', icon: 'plus' },
   { id: 'mine', label: 'Mias', icon: 'bag' },
   { id: 'profile', label: 'Perfil', icon: 'user' },
@@ -230,6 +230,7 @@ function NavIcon({ name }) {
     bag: <><path d="M5 8h14l-1 13H6L5 8Z" /><path d="M9 9V6a3 3 0 0 1 6 0v3" /></>,
     user: <><circle cx="12" cy="8" r="4" /><path d="M4.5 21a7.5 7.5 0 0 1 15 0" /></>,
     shield: <><path d="M12 3 20 6v6c0 5-3.4 8-8 9-4.6-1-8-4-8-9V6l8-3Z" /><path d="m9 12 2 2 4-4" /></>,
+    bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 21h4" /></>,
   };
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
@@ -319,6 +320,7 @@ function App() {
   const [filters, setFilters] = useState(createEmptyFilters);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState(null);
+  const [notifications, setNotifications] = useState([]);
 
   const user = session?.user ?? null;
   const isAdmin = profile?.role === 'admin';
@@ -356,13 +358,59 @@ function App() {
     if (user) {
       loadProfile(user.id);
       loadListings();
+      loadNotifications();
       return;
     }
     setProfile(null);
     setListings([]);
     setSelectedListing(null);
+    setNotifications([]);
     setLoading(false);
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!user || !isSupabaseConfigured) return undefined;
+    const channel = supabase
+      .channel(`notifications-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `recipient_id=eq.${user.id}` },
+        ({ new: incoming }) => {
+          setNotifications((current) => current.some((item) => item.id === incoming.id) ? current : [incoming, ...current]);
+          notify(incoming.title || 'Tienes una nueva notificación.', 'success');
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
+
+  async function loadNotifications() {
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (error) {
+      if (!String(error.message ?? '').includes('notifications')) notify(error, 'error');
+      return;
+    }
+    setNotifications(data ?? []);
+  }
+
+  async function markNotificationsRead(notificationId = null) {
+    let query = supabase.from('notifications').update({ read_at: new Date().toISOString() }).is('read_at', null);
+    if (notificationId) query = query.eq('id', notificationId);
+    const { error } = await query;
+    if (error) {
+      notify(error, 'error');
+      return;
+    }
+    setNotifications((current) => current.map((item) => (
+      (!notificationId || item.id === notificationId) ? { ...item, read_at: item.read_at ?? new Date().toISOString() } : item
+    )));
+  }
 
   async function loadCatalogs() {
     if (!isSupabaseConfigured) {
@@ -568,6 +616,7 @@ function App() {
 
   async function signOut() {
     await supabase.auth.signOut();
+    setNotifications([]);
     setView('explore');
   }
 
@@ -588,7 +637,15 @@ function App() {
   return (
     <div className="min-h-screen pb-32 text-ink md:pb-10">
       <PromoTicker />
-      <Header user={user} profile={profile} view={view} onNavigate={navigate} isAdmin={isAdmin} isSeller={isSeller} />
+      <Header
+        user={user}
+        profile={profile}
+        view={view}
+        onNavigate={navigate}
+        isAdmin={isAdmin}
+        isSeller={isSeller}
+        unreadCount={notifications.filter((item) => !item.read_at).length}
+      />
 
       {notice && (
         <button
@@ -705,6 +762,12 @@ function App() {
             </RequireAuth>
           )}
 
+          {view === 'notifications' && (
+            <RequireAuth user={user} setView={setView}>
+              <NotificationsView notifications={notifications} onRead={markNotificationsRead} />
+            </RequireAuth>
+          )}
+
           {view === 'admin' && (
             <RequireAuth user={user} setView={setView}>
               <AdminPanel
@@ -773,7 +836,7 @@ function PromoTicker() {
   );
 }
 
-function Header({ user, profile, view, onNavigate, isAdmin, isSeller }) {
+function Header({ user, profile, view, onNavigate, isAdmin, isSeller, unreadCount }) {
   const items = getNavigationItems(isSeller, isAdmin);
   const displayName = user ? profile?.full_name?.split(' ')[0] ?? user.email?.split('@')[0] ?? 'Perfil' : 'Invitado';
   const avatar = profile?.avatar_url;
@@ -809,13 +872,38 @@ function Header({ user, profile, view, onNavigate, isAdmin, isSeller }) {
           ))}
         </nav>
 
-        <button className="hidden justify-self-end rounded-3xl border border-white/20 bg-white px-4 py-3 text-sm font-black text-ink shadow-soft transition active:scale-[0.98] md:inline-flex" onClick={() => onNavigate(!user ? 'profile' : 'catalog')}>
-          {!user ? 'Iniciar sesion' : 'Ver publicaciones'}
-        </button>
+        <div className="hidden items-center justify-self-end gap-2 md:flex">
+          {user && (
+            <button
+              className={cx('relative grid h-11 w-11 place-items-center rounded-full border shadow-soft transition', view === 'notifications' ? 'border-campus bg-campus text-white' : 'border-orange-100 bg-white text-campus')}
+              type="button"
+              onClick={() => onNavigate('notifications')}
+              aria-label={`Notificaciones${unreadCount ? `, ${unreadCount} sin leer` : ''}`}
+            >
+              <span className="h-5 w-5"><NavIcon name="bell" /></span>
+              {unreadCount > 0 && <span className="absolute -right-1 -top-1 grid min-h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-black text-white">{Math.min(unreadCount, 99)}</span>}
+            </button>
+          )}
+          <button className="rounded-3xl border border-white/20 bg-white px-4 py-3 text-sm font-black text-ink shadow-soft transition active:scale-[0.98]" onClick={() => onNavigate(!user ? 'profile' : 'catalog')}>
+            {!user ? 'Iniciar sesion' : 'Ver publicaciones'}
+          </button>
+        </div>
 
-        <button className="absolute right-5 top-5 rounded-full bg-orange-100 px-3 py-1 text-xs font-black text-campus md:hidden" onClick={() => onNavigate(user ? 'explore' : 'profile')}>
-          {user ? 'Phasvy' : 'Entrar'}
-        </button>
+        {user ? (
+          <button
+            className={cx('absolute right-5 top-4 grid h-10 w-10 place-items-center rounded-full shadow-soft md:hidden', view === 'notifications' ? 'bg-campus text-white' : 'bg-orange-100 text-campus')}
+            type="button"
+            onClick={() => onNavigate('notifications')}
+            aria-label={`Notificaciones${unreadCount ? `, ${unreadCount} sin leer` : ''}`}
+          >
+            <span className="h-5 w-5"><NavIcon name="bell" /></span>
+            {unreadCount > 0 && <span className="absolute -right-1 -top-1 grid min-h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-black text-white">{Math.min(unreadCount, 99)}</span>}
+          </button>
+        ) : (
+          <button className="absolute right-5 top-5 rounded-full bg-orange-100 px-3 py-1 text-xs font-black text-campus md:hidden" onClick={() => onNavigate('profile')}>
+            Entrar
+          </button>
+        )}
       </div>
     </header>
   );
@@ -895,6 +983,14 @@ function Explore({ listings, filters, setFilters, faculties, categories, onOpenF
 
 function CatalogView({ user, loading, listings, filters, setFilters, faculties, categories, onOpen, onBack, onLogin }) {
   if (!user) return <LoginGate onLogin={onLogin} />;
+  const topListings = [...listings]
+    .filter((listing) => getReviews(listing).length > 0)
+    .sort((a, b) => {
+      const ratingDifference = getListingRating(b) - getListingRating(a);
+      if (ratingDifference) return ratingDifference;
+      return getReviews(b).length - getReviews(a).length;
+    })
+    .slice(0, 3);
 
   return (
     <div className="space-y-5">
@@ -908,6 +1004,25 @@ function CatalogView({ user, loading, listings, filters, setFilters, faculties, 
       </section>
 
       <Filters filters={filters} setFilters={setFilters} faculties={faculties} categories={categories} />
+
+      {!loading && topListings.length > 0 && (
+        <section className="overflow-hidden rounded-[30px] bg-gradient-to-br from-amber-300 via-orange-400 to-red-500 p-[2px] shadow-[0_22px_70px_rgba(249,115,22,0.28)]">
+          <div className="rounded-[28px] bg-gradient-to-br from-orange-50 via-white to-amber-50 p-5 md:p-7">
+            <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">Favoritos de la comunidad</p>
+                <h2 className="mt-1 text-3xl font-black text-slate-950">Top publicaciones</h2>
+              </div>
+              <p className="text-sm font-bold text-orange-800/70">Las mejor valoradas por clientes</p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              {topListings.map((listing, index) => (
+                <ListingCard key={`top-${listing.id}`} listing={listing} onOpen={() => onOpen(listing)} featured rank={index + 1} />
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {loading ? (
         <div className="panel p-8 text-center font-semibold text-slate-500">Cargando publicaciones...</div>
@@ -1365,23 +1480,26 @@ function SellerJoin({ setView, setFilters, onJoin }) {
         </div>
       </div>
       <button
-        className="fixed bottom-24 right-5 z-30 hidden h-12 w-12 place-items-center rounded-md bg-red-600 text-2xl font-black text-white shadow-ios md:grid"
+        className="group fixed bottom-8 right-8 z-30 hidden h-14 w-14 place-items-center rounded-full border border-white/70 bg-gradient-to-br from-orange-400 via-orange-500 to-amber-600 text-white shadow-[0_16px_35px_rgba(234,88,12,0.35)] ring-4 ring-orange-100/70 transition duration-300 hover:-translate-y-1 hover:scale-105 hover:shadow-[0_20px_45px_rgba(234,88,12,0.45)] md:grid"
         onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
         aria-label="Volver arriba"
       >
-        ↑
+        <svg aria-hidden="true" className="h-6 w-6 transition-transform group-hover:-translate-y-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+          <path d="m6 14 6-6 6 6" />
+        </svg>
       </button>
     </section>
   );
 }
 
-function ListingCard({ listing, onOpen }) {
+function ListingCard({ listing, onOpen, featured = false, rank = null }) {
   const cover = listing.images?.[0]?.url;
   const rating = getListingRating(listing);
   const reviewCount = getReviews(listing).length || listing.reviews_count || 0;
   const sellerStats = getSellerStats([listing], listing.seller_id);
   return (
-    <button className="panel overflow-hidden text-left transition hover:-translate-y-1 hover:shadow-ios" onClick={onOpen}>
+    <button className={cx('panel relative overflow-hidden text-left transition hover:-translate-y-1 hover:shadow-ios', featured && 'border border-orange-200 bg-white shadow-soft')} onClick={onOpen}>
+      {featured && <span className="absolute left-4 top-4 z-10 rounded-full bg-gradient-to-r from-orange-500 to-red-500 px-3 py-1.5 text-xs font-black text-white shadow-lg">TOP #{rank}</span>}
       <div className="aspect-[4/3] bg-slate-100 p-2">
         <div className="h-full overflow-hidden rounded-[22px] bg-slate-200">
           {cover ? <img src={cover} alt={listing.title} className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-4xl text-slate-300">+</div>}
@@ -1399,7 +1517,7 @@ function ListingCard({ listing, onOpen }) {
             <p className="truncate text-xs font-black text-slate-500">{listing.faculty?.name ?? 'Campus'}</p>
             <p className="truncate text-xs font-bold text-slate-400">{listing.category?.name ?? 'General'}</p>
           </div>
-          <p className="shrink-0 rounded-full bg-ink px-3 py-1.5 text-sm font-black text-white">{currency.format(listing.price ?? 0)}</p>
+          <p className={cx('shrink-0 rounded-full px-3 py-1.5 font-black text-white shadow-soft', featured ? 'bg-gradient-to-r from-orange-500 to-red-500 text-base' : 'bg-gradient-to-r from-slate-900 to-slate-700 text-sm')}>{currency.format(listing.price ?? 0)}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {listing.status === 'sold' && <span className="rounded-full bg-coral/10 px-3 py-1 text-xs font-bold text-coral">Vendido</span>}
@@ -1543,6 +1661,58 @@ function ReviewSection({ listing, reviews, user, onReview }) {
         </form>
       ) : (
         <p className="border-t border-orange-100 pt-3 text-xs font-bold text-slate-500">Inicia sesion para dejar una resena. No se permiten enlaces, spam ni resenas falsas.</p>
+      )}
+    </div>
+  );
+}
+
+function NotificationsView({ notifications, onRead }) {
+  const unreadCount = notifications.filter((item) => !item.read_at).length;
+  const styles = {
+    success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    warning: 'border-amber-200 bg-amber-50 text-amber-800',
+    business: 'border-violet-200 bg-violet-50 text-violet-700',
+    info: 'border-sky-200 bg-sky-50 text-sky-700',
+  };
+
+  return (
+    <div className="mx-auto max-w-4xl space-y-5">
+      <section className="dark-panel flex flex-col gap-4 p-6 md:flex-row md:items-center md:justify-between md:p-8">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-200">Centro de avisos</p>
+          <h1 className="mt-2 text-4xl font-black">Notificaciones</h1>
+          <p className="mt-2 text-sm text-white/60">{unreadCount ? `${unreadCount} sin leer` : 'Estás al día'}</p>
+        </div>
+        {unreadCount > 0 && <button className="secondary-btn !border-white/15 !bg-white/10 !text-white" type="button" onClick={() => onRead()}>Marcar todas como leídas</button>}
+      </section>
+
+      {notifications.length === 0 ? (
+        <section className="panel p-8 text-center">
+          <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-orange-100 text-campus"><span className="h-6 w-6"><NavIcon name="bell" /></span></div>
+          <h2 className="mt-4 text-xl font-black">Todavía no tienes notificaciones</h2>
+          <p className="mt-2 text-sm text-slate-500">Aquí recibirás aprobaciones, cambios de rol, avisos y novedades de Phasvy.</p>
+        </section>
+      ) : (
+        <div className="space-y-3">
+          {notifications.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={cx(
+                'panel grid w-full gap-3 border p-5 text-left transition hover:-translate-y-0.5 hover:shadow-soft md:grid-cols-[auto_1fr_auto] md:items-start',
+                item.read_at ? 'border-slate-100 opacity-75' : styles[item.notification_type] ?? styles.info,
+              )}
+              onClick={() => !item.read_at && onRead(item.id)}
+            >
+              <span className={cx('mt-1 h-3 w-3 rounded-full', item.read_at ? 'bg-slate-300' : 'bg-current')} />
+              <span>
+                <span className="block font-black text-slate-900">{item.title}</span>
+                <span className="mt-1 block text-sm leading-6 text-slate-600">{item.message}</span>
+              </span>
+              <span className="text-xs font-bold text-slate-400">{new Date(item.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}</span>
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -2506,6 +2676,7 @@ function AdminPanel({ isAdmin, listings, faculties, categories, reload, onDelete
             ['businesses', `Negocios (${pendingBusinesses.length})`],
             ['users', `Usuarios (${users.length})`],
             ['listings', `Publicaciones (${listings.length})`],
+            ['notices', 'Avisos'],
             ['catalogs', 'Catálogos'],
           ].map(([id, label]) => (
             <button key={id} type="button" className={cx('rounded-full px-4 py-2 text-xs font-black', tab === id ? 'bg-orange-500 text-white' : 'bg-white/10 text-white')} onClick={() => setTab(id)}>
@@ -2594,6 +2765,8 @@ function AdminPanel({ isAdmin, listings, faculties, categories, reload, onDelete
         </section>
       )}
 
+      {tab === 'notices' && <AdminNoticeComposer setNotice={setNotice} />}
+
       {tab === 'catalogs' && (
         <>
           <CatalogManager title="Facultades" table="faculties" items={faculties} reload={reload} setNotice={setNotice} />
@@ -2601,6 +2774,51 @@ function AdminPanel({ isAdmin, listings, faculties, categories, reload, onDelete
         </>
       )}
     </div>
+  );
+}
+
+function AdminNoticeComposer({ setNotice }) {
+  const [title, setTitle] = useState('');
+  const [message, setMessage] = useState('');
+  const [audience, setAudience] = useState('all');
+  const [sending, setSending] = useState(false);
+
+  async function send(event) {
+    event.preventDefault();
+    setSending(true);
+    const { data, error } = await supabase.rpc('admin_send_notification', {
+      p_title: sanitizeSingleLine(title, 100),
+      p_message: sanitizeMultiline(message, 1000),
+      p_audience: audience,
+    });
+    setSending(false);
+    if (error) {
+      setNotice(error, 'error');
+      return;
+    }
+    setTitle('');
+    setMessage('');
+    setNotice(`Aviso enviado a ${Number(data ?? 0)} cuentas.`, 'success');
+  }
+
+  return (
+    <section className="panel p-5 md:p-7">
+      <p className="label">Comunicaciones</p>
+      <h2 className="mt-2 text-2xl font-black">Enviar aviso o boletín</h2>
+      <p className="mt-2 text-sm text-slate-500">La notificación aparecerá en tiempo real en el botón de campana de cada destinatario.</p>
+      <form className="mt-6 space-y-4" onSubmit={send}>
+        <div className="grid gap-4 md:grid-cols-[1fr_14rem]">
+          <input className="field" minLength="3" maxLength="100" required placeholder="Título del aviso" value={title} onChange={(event) => setTitle(event.target.value)} />
+          <select className="field" value={audience} onChange={(event) => setAudience(event.target.value)}>
+            <option value="all">Clientes y vendedores</option>
+            <option value="clients">Solo clientes</option>
+            <option value="sellers">Solo vendedores</option>
+          </select>
+        </div>
+        <textarea className="field min-h-36" minLength="3" maxLength="1000" required placeholder="Escribe el aviso, boletín o novedad" value={message} onChange={(event) => setMessage(event.target.value)} />
+        <button className="primary-btn" disabled={sending}>{sending ? 'Enviando...' : 'Enviar notificación'}</button>
+      </form>
+    </section>
   );
 }
 
