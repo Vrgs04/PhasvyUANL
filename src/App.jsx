@@ -322,7 +322,7 @@ function App() {
 
   const user = session?.user ?? null;
   const isAdmin = profile?.role === 'admin';
-  const isSeller = profile?.role === 'seller' || isAdmin;
+  const isSeller = (profile?.role === 'seller' && profile?.business_status === 'approved') || isAdmin;
 
   function notify(message, type = 'success', context = '') {
     setNotice({ message: getErrorMessage(message, context), type });
@@ -513,16 +513,38 @@ function App() {
     };
     const existingReviewId = getReviews(listing).find((review) => review.reviewer_id === user.id)?.id;
     const result = existingReviewId
-      ? await supabase.from('listing_reviews').update(payload).eq('id', existingReviewId)
-      : await supabase.from('listing_reviews').insert(payload);
-    const { error } = result;
+      ? await supabase.from('listing_reviews').update(payload).eq('id', existingReviewId).select().single()
+      : await supabase.from('listing_reviews').insert(payload).select().single();
+    const { data: savedReview, error } = result;
     if (error) {
       notify(error, 'error');
       return false;
     }
+    const mergeReview = (currentListing) => {
+      if (!currentListing || currentListing.id !== listing.id) return currentListing;
+      const currentReviews = getReviews(currentListing);
+      const nextReviews = existingReviewId
+        ? currentReviews.map((review) => (review.id === existingReviewId ? savedReview : review))
+        : [savedReview, ...currentReviews];
+      return { ...currentListing, reviews: nextReviews, reviews_count: nextReviews.length };
+    };
+    setListings((current) => current.map(mergeReview));
+    setSelectedListing((current) => mergeReview(current));
     notify('Resena publicada.', 'success');
-    await loadListings();
     return true;
+  }
+
+  function joinAsSeller() {
+    if (!user) {
+      navigate('profile');
+      return;
+    }
+    if (isSeller) {
+      notify('Ya formas parte de los vendedores.', 'success');
+      navigate('mine');
+      return;
+    }
+    navigate('join');
   }
 
   const visibleListings = useMemo(() => {
@@ -563,13 +585,6 @@ function App() {
     await loadListings();
   }
 
-  async function blockUser(id) {
-    const { error } = await supabase.from('users').update({ is_blocked: true }).eq('id', id);
-    if (error) return notify(error, 'error');
-    notify('Usuario bloqueado.', 'success');
-    await loadListings();
-  }
-
   return (
     <div className="min-h-screen pb-32 text-ink md:pb-10">
       <PromoTicker />
@@ -602,6 +617,7 @@ function App() {
               onOpenCampus={openCampus}
               setView={setView}
               user={user}
+              onJoin={joinAsSeller}
             />
           )}
 
@@ -675,6 +691,20 @@ function App() {
             />
           )}
 
+          {view === 'join' && (
+            <RequireAuth user={user} setView={setView}>
+              <SellerApplication
+                profile={profile}
+                onSubmitted={async () => {
+                  await loadProfile(user.id);
+                  notify('Espera a que se valide tu negocio.', 'success');
+                }}
+                setNotice={notify}
+                onOpenListings={() => navigate('mine')}
+              />
+            </RequireAuth>
+          )}
+
           {view === 'admin' && (
             <RequireAuth user={user} setView={setView}>
               <AdminPanel
@@ -687,8 +717,8 @@ function App() {
                   await loadListings();
                 }}
                 onDelete={deleteListing}
-                onBlock={blockUser}
                 setNotice={notify}
+                currentUserId={user?.id}
               />
             </RequireAuth>
           )}
@@ -838,8 +868,7 @@ function SetupWarning() {
   );
 }
 
-function Explore({ listings, filters, setFilters, faculties, categories, onOpenFaculty, onOpenCampus, setView, user }) {
-  const sellerCount = new Set(listings.map((listing) => listing.seller_id)).size;
+function Explore({ listings, filters, setFilters, faculties, categories, onOpenFaculty, onOpenCampus, setView, user, onJoin }) {
   const openCatalog = () => {
     if (!user) {
       setView('profile');
@@ -859,7 +888,7 @@ function Explore({ listings, filters, setFilters, faculties, categories, onOpenF
         openCatalog();
       }} />
       <FeaturedCategories categories={categories} setFilters={setFilters} onSelect={openCatalog} />
-      <SellerJoin sellerCount={sellerCount} listingCount={listings.length} setView={setView} setFilters={setFilters} />
+      <SellerJoin setView={setView} setFilters={setFilters} onJoin={onJoin} />
     </div>
   );
 }
@@ -1277,7 +1306,7 @@ function SelectionMarket({ selection, faculties, listings, onBack, onOpen, onLog
   );
 }
 
-function SellerJoin({ sellerCount, listingCount, setView, setFilters }) {
+function SellerJoin({ setView, setFilters, onJoin }) {
   const go = (nextView) => {
     setView(nextView);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1293,7 +1322,6 @@ function SellerJoin({ sellerCount, listingCount, setView, setFilters }) {
       onClick={(event) => {
         if (event.target.tagName !== 'BUTTON') return;
         const text = event.target.textContent.toLowerCase();
-        if (text.includes('quiero')) go('create');
         if (text.includes('inicio')) go('explore');
         if (text.includes('quienes')) go('info-about');
         if (text.includes('tiendas')) visitStores();
@@ -1310,15 +1338,9 @@ function SellerJoin({ sellerCount, listingCount, setView, setFilters }) {
           Unete como vendedor. Publica tus productos, administra tus anuncios y contacta compradores dentro de la UANL sin pagos en linea ni envios.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
-          <button className="rounded-md bg-slate-500 px-8 py-3 text-sm font-black text-white transition hover:bg-slate-700">
+          <button type="button" className="rounded-md bg-slate-500 px-8 py-3 text-sm font-black text-white transition hover:bg-slate-700" onClick={onJoin}>
             Quiero ser parte
           </button>
-          <div className="rounded-md bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm">
-            {sellerCount} vendedores demo
-          </div>
-          <div className="rounded-md bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm">
-            {listingCount} publicaciones
-          </div>
         </div>
       </div>
       <img src="/campus/footer-campus.jpg" alt="" className="h-80 w-full object-cover object-bottom" />
@@ -1526,6 +1548,83 @@ function ReviewSection({ listing, reviews, user, onReview }) {
   );
 }
 
+function SellerApplication({ profile, onSubmitted, setNotice, onOpenListings }) {
+  const [businessName, setBusinessName] = useState(profile?.business_name ?? '');
+  const [description, setDescription] = useState(profile?.business_description ?? '');
+  const [saving, setSaving] = useState(false);
+  const status = profile?.business_status ?? 'not_requested';
+
+  if (profile?.role === 'seller' || profile?.role === 'admin') {
+    return (
+      <section className="panel mx-auto max-w-2xl p-7 text-center">
+        <p className="label">Vendedor aprobado</p>
+        <h1 className="mt-2 text-3xl font-black">Ya formas parte de los vendedores</h1>
+        <p className="mt-3 text-sm text-slate-500">Administra tus productos y crea nuevas publicaciones desde tu panel.</p>
+        <button className="primary-btn mt-6" type="button" onClick={onOpenListings}>Ir a mis publicaciones</button>
+      </section>
+    );
+  }
+
+  if (status === 'pending') {
+    return (
+      <section className="panel mx-auto max-w-2xl p-7 text-center">
+        <p className="label">Solicitud recibida</p>
+        <h1 className="mt-2 text-3xl font-black">Tu negocio está en espera de validación</h1>
+        <p className="mt-3 text-sm leading-6 text-slate-500">El administrador revisará la información de <strong>{profile?.business_name}</strong>. Te daremos acceso para publicar cuando sea aprobado.</p>
+      </section>
+    );
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    if (businessName.trim().length < 3) {
+      setNotice('El nombre del negocio debe tener al menos 3 caracteres.', 'error');
+      return;
+    }
+    if (description.trim().length < 20) {
+      setNotice('Describe tu negocio con al menos 20 caracteres.', 'error');
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase.rpc('submit_business_application', {
+      p_business_name: sanitizeSingleLine(businessName, 100),
+      p_business_description: sanitizeMultiline(description, 600),
+    });
+    setSaving(false);
+    if (error) {
+      setNotice(error, 'error');
+      return;
+    }
+    await onSubmitted();
+  }
+
+  return (
+    <div className="mx-auto grid max-w-4xl gap-4 md:grid-cols-[0.9fr_1.1fr]">
+      <section className="dark-panel p-7">
+        <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-200">Únete a Phasvy</p>
+        <h1 className="mt-3 text-4xl font-black">Cambia tu cuenta de Cliente a Vendedor</h1>
+        <p className="mt-4 text-sm leading-6 text-white/65">Cuéntanos qué vendes. Tu cuenta conservará el acceso de cliente mientras revisamos el negocio.</p>
+        {status === 'rejected' && (
+          <p className="mt-5 rounded-2xl bg-red-500/15 p-4 text-sm font-bold text-red-100">
+            La solicitud anterior no fue aprobada{profile?.business_review_note ? `: ${profile.business_review_note}` : '.'}
+          </p>
+        )}
+      </section>
+      <form className="panel space-y-4 p-6" onSubmit={submit}>
+        <div>
+          <label className="label" htmlFor="seller-business-name">Nombre del negocio</label>
+          <input id="seller-business-name" className="field mt-2" minLength="3" maxLength="100" required value={businessName} onChange={(event) => setBusinessName(event.target.value)} />
+        </div>
+        <div>
+          <label className="label" htmlFor="seller-business-description">Descripción</label>
+          <textarea id="seller-business-description" className="field mt-2 min-h-36" minLength="20" maxLength="600" required value={description} onChange={(event) => setDescription(event.target.value)} />
+        </div>
+        <button className="primary-btn w-full" disabled={saving}>{saving ? 'Enviando...' : status === 'rejected' ? 'Enviar nueva solicitud' : 'Solicitar validación'}</button>
+      </form>
+    </div>
+  );
+}
+
 function RequireAuth({ user, setView, children }) {
   if (user) return children;
   return (
@@ -1544,8 +1643,8 @@ function RequireSeller({ user, isSeller, setView, children }) {
     <div className="panel mx-auto max-w-xl p-8 text-center">
       <p className="label">Cuenta cliente</p>
       <h2 className="mt-2 text-2xl font-black">Esta seccion es para vendedores.</h2>
-      <p className="mt-2 text-sm leading-6 text-slate-500">Entra como vendedor desde el login o perfil para publicar y gestionar tus productos.</p>
-      <button className="primary-btn mt-5" onClick={() => setView('catalog')}>Ver publicaciones</button>
+      <p className="mt-2 text-sm leading-6 text-slate-500">Solicita la validación de tu negocio para publicar y gestionar productos.</p>
+      <button className="primary-btn mt-5" onClick={() => setView('join')}>Quiero ser vendedor</button>
     </div>
   );
 }
@@ -1861,6 +1960,7 @@ function AuthForm({ setNotice, onAuthenticated }) {
   const [showPassword, setShowPassword] = useState(false);
   const [fullName, setFullName] = useState('');
   const [businessName, setBusinessName] = useState('');
+  const [businessDescription, setBusinessDescription] = useState('');
   const [phoneCode, setPhoneCode] = useState('MX');
   const [phone, setPhone] = useState('');
   const [accountRole, setAccountRole] = useState('user');
@@ -1904,6 +2004,7 @@ function AuthForm({ setNotice, onAuthenticated }) {
       if (normalizedPhone.length !== 10) errors.phone = 'El WhatsApp debe tener exactamente 10 dígitos.';
       if (password !== confirmPassword) errors.confirmPassword = 'Las contraseñas no coinciden.';
       if (accountRole === 'seller' && businessName.trim().length < 3) errors.businessName = 'Escribe el nombre de tu negocio.';
+      if (accountRole === 'seller' && businessDescription.trim().length < 20) errors.businessDescription = 'Describe tu negocio con al menos 20 caracteres.';
     }
 
     setFieldErrors(errors);
@@ -1944,6 +2045,7 @@ function AuthForm({ setNotice, onAuthenticated }) {
                   whatsapp: `${getDialCode(phoneCode)}${normalizedPhone}`,
                   role: accountRole,
                   business_name: accountRole === 'seller' ? sanitizeSingleLine(businessName, 100) : '',
+                  business_description: accountRole === 'seller' ? sanitizeMultiline(businessDescription, 600) : '',
                 },
               },
             });
@@ -1959,10 +2061,10 @@ function AuthForm({ setNotice, onAuthenticated }) {
         const { error: profileError } = await supabase.from('users').upsert({
           id: result.data.user.id,
           email: result.data.user.email ?? email,
-          role: accountRole,
           full_name: sanitizeSingleLine(fullName, 120),
           whatsapp: `${getDialCode(phoneCode)}${normalizedPhone}`,
           business_name: accountRole === 'seller' ? sanitizeSingleLine(businessName, 100) : null,
+          business_description: accountRole === 'seller' ? sanitizeMultiline(businessDescription, 600) : null,
         });
         if (profileError) {
           setFieldErrors({ form: getErrorMessage(profileError) });
@@ -1973,7 +2075,7 @@ function AuthForm({ setNotice, onAuthenticated }) {
     }
     if (mode === 'signup') {
       if (result.data?.session) {
-        setNotice(accountRole === 'seller' ? 'Cuenta de vendedor creada.' : 'Cuenta de cliente creada.', 'success');
+        setNotice(accountRole === 'seller' ? 'Solicitud enviada. Espera a que se valide tu negocio.' : 'Cuenta de cliente creada.', 'success');
         return;
       }
       setVerificationSent(true);
@@ -2148,6 +2250,20 @@ function AuthForm({ setNotice, onAuthenticated }) {
                 clearFieldError('businessName');
               }}
             />
+            <AuthFieldError id="business-description-error" message={fieldErrors.businessDescription} />
+            <textarea
+              className="field min-h-28"
+              aria-invalid={Boolean(fieldErrors.businessDescription)}
+              aria-describedby={fieldErrors.businessDescription ? 'business-description-error' : undefined}
+              minLength="20"
+              maxLength="600"
+              placeholder="Describe qué vende tu negocio"
+              value={businessDescription}
+              onChange={(event) => {
+                setBusinessDescription(event.target.value);
+                clearFieldError('businessDescription');
+              }}
+            />
           </>
         )}
         <AuthFieldError id="email-error" message={fieldErrors.email} />
@@ -2305,34 +2421,185 @@ function ProfileForm({ user, profile, onSaved, onSignOut, setNotice }) {
   );
 }
 
-function AdminPanel({ isAdmin, listings, faculties, categories, reload, onDelete, onBlock, setNotice }) {
+function AdminPanel({ isAdmin, listings, faculties, categories, reload, onDelete, setNotice, currentUserId }) {
+  const [users, setUsers] = useState([]);
+  const [tab, setTab] = useState('businesses');
+  const [loadingUsers, setLoadingUsers] = useState(false);
+
+  async function loadUsers() {
+    if (!isAdmin) return;
+    setLoadingUsers(true);
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, email, full_name, business_name, business_description, business_status, business_submitted_at, business_review_note, role, is_blocked')
+      .order('created_at', { ascending: false });
+    setLoadingUsers(false);
+    if (error) {
+      setNotice(error, 'error');
+      return;
+    }
+    setUsers(data ?? []);
+  }
+
+  useEffect(() => {
+    loadUsers();
+  }, [isAdmin]);
+
   if (!isAdmin) {
     return <div className="panel p-8 text-center font-black">No tienes permisos de administrador.</div>;
   }
+
+  const pendingBusinesses = users.filter((item) => item.business_status === 'pending');
+
+  async function reviewBusiness(id, approve) {
+    const note = approve ? null : window.prompt('Motivo del rechazo (opcional):') ?? null;
+    const { error } = await supabase.rpc('review_business_application', {
+      applicant_id: id,
+      approve,
+      review_note: note,
+    });
+    if (error) {
+      setNotice(error, 'error');
+      return;
+    }
+    setNotice(approve ? 'Negocio aprobado. El usuario ya es vendedor.' : 'Solicitud rechazada.', 'success');
+    await Promise.all([loadUsers(), reload()]);
+  }
+
+  async function changeRole(id, role) {
+    const { error } = await supabase.rpc('admin_set_user_role', { target_id: id, new_role: role });
+    if (error) {
+      setNotice(error, 'error');
+      return;
+    }
+    setNotice('Rol actualizado.', 'success');
+    await Promise.all([loadUsers(), reload()]);
+  }
+
+  async function toggleBlocked(item) {
+    const { error } = await supabase.from('users').update({ is_blocked: !item.is_blocked }).eq('id', item.id);
+    if (error) {
+      setNotice(error, 'error');
+      return;
+    }
+    setNotice(item.is_blocked ? 'Usuario desbloqueado.' : 'Usuario bloqueado.', 'success');
+    await loadUsers();
+  }
+
+  async function changeListingStatus(id, status) {
+    const { error } = await supabase.from('listings').update({ status }).eq('id', id);
+    if (error) {
+      setNotice(error, 'error');
+      return;
+    }
+    setNotice('Estado de publicación actualizado.', 'success');
+    await reload();
+  }
+
   return (
     <div className="space-y-5">
-      <h1 className="text-3xl font-black">Panel administrador</h1>
-      <CatalogManager title="Facultades" table="faculties" items={faculties} reload={reload} setNotice={setNotice} />
-      <CatalogManager title="Categorias" table="categories" items={categories} reload={reload} setNotice={setNotice} />
-      <div className="panel overflow-hidden">
-        <div className="border-b border-slate-100 p-4">
-          <h2 className="font-black">Todas las publicaciones</h2>
-        </div>
-        <div className="divide-y divide-slate-100">
-          {listings.map((listing) => (
-            <div key={listing.id} className="grid gap-3 p-4 md:grid-cols-[1fr_auto] md:items-center">
-              <div>
-                <p className="font-black">{listing.title}</p>
-                <p className="text-sm text-slate-500">{listing.seller?.full_name ?? listing.seller_id} - {listing.status}</p>
-              </div>
-              <div className="flex gap-2">
-                <button className="secondary-btn !py-2" onClick={() => onBlock(listing.seller_id)}>Bloquear</button>
-                <button className="secondary-btn !border-coral/30 !py-2 !text-coral" onClick={() => onDelete(listing.id)}>Eliminar</button>
-              </div>
-            </div>
+      <section className="dark-panel p-6 md:p-8">
+        <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-200">Control Phasvy</p>
+        <h1 className="mt-2 text-4xl font-black">Panel administrador</h1>
+        <div className="mt-6 flex flex-wrap gap-2">
+          {[
+            ['businesses', `Negocios (${pendingBusinesses.length})`],
+            ['users', `Usuarios (${users.length})`],
+            ['listings', `Publicaciones (${listings.length})`],
+            ['catalogs', 'Catálogos'],
+          ].map(([id, label]) => (
+            <button key={id} type="button" className={cx('rounded-full px-4 py-2 text-xs font-black', tab === id ? 'bg-orange-500 text-white' : 'bg-white/10 text-white')} onClick={() => setTab(id)}>
+              {label}
+            </button>
           ))}
         </div>
-      </div>
+      </section>
+
+      {tab === 'businesses' && (
+        <section className="panel overflow-hidden">
+          <div className="border-b border-slate-100 p-5">
+            <h2 className="text-xl font-black">Validación de negocios</h2>
+            <p className="mt-1 text-sm text-slate-500">Las cuentas permanecen como clientes hasta que apruebes su negocio.</p>
+          </div>
+          {loadingUsers ? (
+            <p className="p-6 text-sm font-bold text-slate-500">Cargando solicitudes...</p>
+          ) : pendingBusinesses.length === 0 ? (
+            <p className="p-6 text-sm font-bold text-slate-500">No hay negocios pendientes.</p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {pendingBusinesses.map((item) => (
+                <article key={item.id} className="grid gap-4 p-5 md:grid-cols-[1fr_auto] md:items-center">
+                  <div>
+                    <p className="text-lg font-black">{item.business_name}</p>
+                    <p className="text-sm font-bold text-slate-500">{item.full_name || item.email}</p>
+                    <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{item.business_description}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button className="primary-btn !py-2" type="button" onClick={() => reviewBusiness(item.id, true)}>Aprobar</button>
+                    <button className="secondary-btn !border-red-200 !py-2 !text-red-600" type="button" onClick={() => reviewBusiness(item.id, false)}>Rechazar</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {tab === 'users' && (
+        <section className="panel overflow-hidden">
+          <div className="border-b border-slate-100 p-5"><h2 className="text-xl font-black">Roles y permisos</h2></div>
+          <div className="divide-y divide-slate-100">
+            {users.map((item) => (
+              <div key={item.id} className="grid gap-3 p-4 lg:grid-cols-[1fr_13rem_auto] lg:items-center">
+                <div className="min-w-0">
+                  <p className="truncate font-black">{item.full_name || 'Sin nombre'} {item.id === currentUserId && '(tú)'}</p>
+                  <p className="truncate text-xs font-semibold text-slate-500">{item.email}</p>
+                </div>
+                <select className="field" value={item.role} disabled={item.id === currentUserId} onChange={(event) => changeRole(item.id, event.target.value)}>
+                  <option value="guest">Usuario sin registrar</option>
+                  <option value="user">Cliente</option>
+                  <option value="seller">Vendedor</option>
+                  <option value="admin">Admin</option>
+                </select>
+                <button className={cx('secondary-btn !py-2', item.is_blocked && '!border-emerald-200 !text-emerald-700')} type="button" onClick={() => toggleBlocked(item)}>
+                  {item.is_blocked ? 'Desbloquear' : 'Bloquear'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {tab === 'listings' && (
+        <section className="panel overflow-hidden">
+          <div className="border-b border-slate-100 p-5"><h2 className="text-xl font-black">Control de publicaciones</h2></div>
+          <div className="divide-y divide-slate-100">
+            {listings.map((listing) => (
+              <div key={listing.id} className="grid gap-3 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
+                <div>
+                  <p className="font-black">{listing.title}</p>
+                  <p className="text-sm text-slate-500">{listing.seller?.business_name || listing.seller?.full_name || listing.seller_id}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <select className="field !w-auto" value={listing.status} onChange={(event) => changeListingStatus(listing.id, event.target.value)}>
+                    <option value="active">Activa</option>
+                    <option value="sold">Vendida</option>
+                    <option value="deleted">Eliminada</option>
+                  </select>
+                  <button className="secondary-btn !border-coral/30 !py-2 !text-coral" type="button" onClick={() => onDelete(listing.id)}>Eliminar</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {tab === 'catalogs' && (
+        <>
+          <CatalogManager title="Facultades" table="faculties" items={faculties} reload={reload} setNotice={setNotice} />
+          <CatalogManager title="Categorias" table="categories" items={categories} reload={reload} setNotice={setNotice} />
+        </>
+      )}
     </div>
   );
 }
