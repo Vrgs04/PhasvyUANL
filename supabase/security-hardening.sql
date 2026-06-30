@@ -48,13 +48,10 @@ begin
     from private.allowed_origins
     where is_active = true and origin = req_origin
   ) then
-    raise sqlstate 'PGRST' using
-      message = json_build_object(
-        'code', 'ORIGIN_NOT_ALLOWED',
-        'message', 'Origin not allowed',
-        'details', req_origin,
-        'hint', 'Add the production origin to private.allowed_origins')::text,
-      detail = json_build_object('status', 403, 'status_text', 'Forbidden')::text;
+    raise sqlstate 'PT403' using
+      message = 'Origin not allowed',
+      detail = req_origin,
+      hint = 'Add the production origin to private.allowed_origins';
   end if;
 
   if req_method in ('GET', 'HEAD', 'OPTIONS') or req_method is null then
@@ -71,16 +68,10 @@ begin
     and request_at >= now() - interval '1 minute';
 
   if requests_last_minute >= 60 then
-    raise sqlstate 'PGRST' using
-      message = json_build_object(
-        'code', 'RATE_LIMITED',
-        'message', 'Demasiadas solicitudes. Intenta de nuevo en un minuto.',
-        'details', 'Maximum 60 write requests per minute',
-        'hint', 'Wait before retrying')::text,
-      detail = json_build_object(
-        'status', 429,
-        'status_text', 'Too Many Requests',
-        'headers', json_build_object('Retry-After', '60'))::text;
+    raise sqlstate 'PT429' using
+      message = 'Demasiadas solicitudes. Intenta de nuevo en un minuto.',
+      detail = 'Maximum 60 write requests per minute',
+      hint = 'Wait before retrying';
   end if;
 
   insert into private.rate_limits (request_key) values (req_key);
