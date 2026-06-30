@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { EMPTY_LISTING } from './data/defaults.js';
 import { DEMO_CATEGORIES, DEMO_FACULTIES, DEMO_LISTINGS } from './data/demo.js';
 import { isSupabaseConfigured, supabase } from './lib/supabase.js';
@@ -168,7 +168,9 @@ function createEmptyFilters() {
 }
 
 function getReviews(listing) {
-  return Array.isArray(listing.reviews) ? listing.reviews.filter((review) => review.status !== 'hidden') : [];
+  return Array.isArray(listing.reviews)
+    ? listing.reviews.filter((review) => !review.status || review.status === 'visible')
+    : [];
 }
 
 function averageRating(reviews, fallback = 0) {
@@ -321,6 +323,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState(null);
   const [notifications, setNotifications] = useState([]);
+  const realtimeRefreshTimer = useRef(null);
 
   const user = session?.user ?? null;
   const isAdmin = profile?.role === 'admin';
@@ -382,6 +385,34 @@ function App() {
       )
       .subscribe();
     return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user || !isSupabaseConfigured) return undefined;
+    const scheduleRefresh = () => {
+      window.clearTimeout(realtimeRefreshTimer.current);
+      realtimeRefreshTimer.current = window.setTimeout(() => loadListings(), 250);
+    };
+    const channel = supabase
+      .channel(`marketplace-live-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'listings' }, (payload) => {
+        const removedId = payload.old?.id;
+        if (payload.eventType === 'DELETE' && removedId) {
+          setListings((current) => current.filter((item) => item.id !== removedId));
+          setSelectedListing((current) => current?.id === removedId ? null : current);
+        } else if (payload.new?.status === 'deleted') {
+          setListings((current) => current.filter((item) => item.id !== payload.new.id));
+          setSelectedListing((current) => current?.id === payload.new.id ? null : current);
+        }
+        scheduleRefresh();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'listing_images' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'listing_reviews' }, scheduleRefresh)
+      .subscribe();
+    return () => {
+      window.clearTimeout(realtimeRefreshTimer.current);
       supabase.removeChannel(channel);
     };
   }, [user?.id]);
@@ -481,7 +512,9 @@ function App() {
       setLoading(false);
       return;
     }
-    setListings(data?.length ? await hydrateListings(data) : DEMO_LISTINGS);
+    const hydrated = await hydrateListings(data ?? []);
+    setListings(hydrated);
+    setSelectedListing((current) => current ? hydrated.find((listing) => listing.id === current.id) ?? null : current);
     setLoading(false);
   }
 
@@ -490,9 +523,12 @@ function App() {
     const sellerIds = [...new Set(rawListings.map((listing) => listing.seller_id).filter(Boolean))];
     const listingIds = rawListings.map((listing) => listing.id).filter(Boolean);
 
+    const reviewQuery = listingIds.length
+      ? supabase.from('listing_reviews').select('*').in('listing_id', listingIds)
+      : null;
     const [sellerResult, { data: reviews }] = await Promise.all([
       sellerIds.length ? supabase.rpc('get_public_seller_profiles', { seller_ids: sellerIds }) : { data: [] },
-      listingIds.length ? supabase.from('listing_reviews').select('*').in('listing_id', listingIds).eq('status', 'visible') : { data: [] },
+      reviewQuery ? reviewQuery.or(`status.eq.visible,reviewer_id.eq.${user.id}`) : { data: [] },
     ]);
     let sellers = sellerResult.data ?? [];
     if (sellerResult.error && sellerIds.length) {
@@ -505,10 +541,14 @@ function App() {
 
     const sellerMap = new Map((sellers ?? []).map((seller) => [seller.id, seller]));
     const reviewsByListing = new Map();
+    const userReviewsByListing = new Map();
     (reviews ?? []).forEach((review) => {
-      const list = reviewsByListing.get(review.listing_id) ?? [];
-      list.push(review);
-      reviewsByListing.set(review.listing_id, list);
+      if (review.status === 'visible') {
+        const list = reviewsByListing.get(review.listing_id) ?? [];
+        list.push(review);
+        reviewsByListing.set(review.listing_id, list);
+      }
+      if (review.reviewer_id === user.id) userReviewsByListing.set(review.listing_id, review);
     });
 
     return rawListings.map((listing) => ({
@@ -516,6 +556,7 @@ function App() {
       seller: sellerMap.get(listing.seller_id) ?? listing.seller,
       images: [...(listing.images ?? [])].sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0)),
       reviews: reviewsByListing.get(listing.id) ?? listing.reviews ?? [],
+      userReview: userReviewsByListing.get(listing.id) ?? null,
     }));
   }
 
@@ -557,9 +598,10 @@ function App() {
       seller_id: listing.seller_id,
       rating: Number(rating),
       comment: sanitizeMultiline(comment, 360),
-      status: 'visible',
+      status: 'pending',
     };
-    const existingReviewId = getReviews(listing).find((review) => review.reviewer_id === user.id)?.id;
+    const existingReviewId = listing.userReview?.id
+      ?? getReviews(listing).find((review) => review.reviewer_id === user.id)?.id;
     const result = existingReviewId
       ? await supabase.from('listing_reviews').update(payload).eq('id', existingReviewId).select().single()
       : await supabase.from('listing_reviews').insert(payload).select().single();
@@ -570,15 +612,12 @@ function App() {
     }
     const mergeReview = (currentListing) => {
       if (!currentListing || currentListing.id !== listing.id) return currentListing;
-      const currentReviews = getReviews(currentListing);
-      const nextReviews = existingReviewId
-        ? currentReviews.map((review) => (review.id === existingReviewId ? savedReview : review))
-        : [savedReview, ...currentReviews];
-      return { ...currentListing, reviews: nextReviews, reviews_count: nextReviews.length };
+      const currentReviews = getReviews(currentListing).filter((review) => review.id !== existingReviewId);
+      return { ...currentListing, reviews: currentReviews, reviews_count: currentReviews.length, userReview: savedReview };
     };
     setListings((current) => current.map(mergeReview));
     setSelectedListing((current) => mergeReview(current));
-    notify('Resena publicada.', 'success');
+    notify('Reseña en revisión.', 'success');
     return true;
   }
 
@@ -621,10 +660,11 @@ function App() {
   }
 
   async function deleteListing(id) {
-    const { error } = await supabase.from('listings').update({ status: 'deleted' }).eq('id', id);
+    const { error } = await supabase.rpc('delete_listing', { p_listing_id: id });
     if (error) return notify(error, 'error');
-    notify('Publicacion eliminada.', 'success');
-    await loadListings();
+    setListings((current) => current.filter((listing) => listing.id !== id));
+    setSelectedListing((current) => current?.id === id ? null : current);
+    notify('Publicación eliminada.', 'success');
   }
 
   async function markSold(id) {
@@ -842,7 +882,7 @@ function Header({ user, profile, view, onNavigate, isAdmin, isSeller, unreadCoun
   const avatar = profile?.avatar_url;
 
   return (
-    <header className="app-header sticky z-20 px-3 py-3 md:px-6">
+    <header className="app-header relative z-20 px-3 py-3 md:sticky md:px-6">
       <div className="liquid mx-auto grid max-w-7xl gap-3 rounded-[28px] px-3 py-3 md:grid-cols-[minmax(190px,0.75fr)_auto_minmax(190px,0.75fr)] md:items-center">
         <button
           className="flex min-w-0 items-center gap-3 rounded-3xl px-2 py-1 text-left transition hover:bg-white/10"
@@ -957,6 +997,8 @@ function SetupWarning() {
 }
 
 function Explore({ listings, filters, setFilters, faculties, categories, onOpenFaculty, onOpenCampus, setView, user, onJoin }) {
+  const activeListings = listings.filter((listing) => listing.status === 'active').length;
+  const sellerCount = new Set(listings.map((listing) => listing.seller_id).filter(Boolean)).size;
   const openCatalog = () => {
     if (!user) {
       setView('profile');
@@ -967,15 +1009,44 @@ function Explore({ listings, filters, setFilters, faculties, categories, onOpenF
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-10 md:space-y-14">
       <IOSInstallPrompt />
-      <CampusTags onSelect={onOpenCampus} />
-      <FacultyTags faculties={faculties} selectedFaculties={filters.faculties} onOpenFaculty={onOpenFaculty} />
       <HeroCarousel onVisit={() => {
         setFilters(createEmptyFilters());
         openCatalog();
       }} />
-      <FeaturedCategories categories={categories} setFilters={setFilters} onSelect={openCatalog} />
+
+      <section className="mx-auto grid max-w-6xl gap-3 sm:grid-cols-3">
+        <button className="panel p-5 text-left transition hover:-translate-y-1 hover:shadow-ios" type="button" onClick={openCatalog}>
+          <span className="text-3xl font-black text-campus">{activeListings}</span>
+          <span className="mt-1 block text-sm font-black text-slate-900">Productos activos</span>
+          <span className="mt-1 block text-xs font-semibold text-slate-500">Explora todo el marketplace</span>
+        </button>
+        <div className="panel p-5">
+          <span className="text-3xl font-black text-violet-600">{sellerCount}</span>
+          <span className="mt-1 block text-sm font-black text-slate-900">Vendedores</span>
+          <span className="mt-1 block text-xs font-semibold text-slate-500">Negocios aprobados y activos</span>
+        </div>
+        <div className="panel p-5">
+          <span className="text-3xl font-black text-emerald-600">{faculties.length}</span>
+          <span className="mt-1 block text-sm font-black text-slate-900">Facultades</span>
+          <span className="mt-1 block text-xs font-semibold text-slate-500">Encuentra entregas cerca de ti</span>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-6xl">
+        <div className="mb-5 flex items-end justify-between gap-4">
+          <div>
+            <p className="label">Encuentra más rápido</p>
+            <h2 className="mt-1 text-3xl font-black">Explora por categoría</h2>
+          </div>
+          <button className="hidden text-sm font-black text-campus underline sm:block" type="button" onClick={openCatalog}>Ver todo</button>
+        </div>
+        <FeaturedCategories categories={categories} setFilters={setFilters} onSelect={openCatalog} />
+      </section>
+
+      <CampusTags onSelect={onOpenCampus} />
+      <FacultyTags faculties={faculties} selectedFaculties={filters.faculties} onOpenFaculty={onOpenFaculty} />
       <SellerJoin setView={setView} setFilters={setFilters} onJoin={onJoin} />
     </div>
   );
@@ -1173,11 +1244,11 @@ function FeaturedCategories({ categories, setFilters, onSelect }) {
   }));
 
   return (
-    <div className="mx-auto grid max-w-6xl gap-8 py-12 md:grid-cols-3">
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {cards.map(({ title, text, category, image }) => (
         <button
           key={title}
-          className="group overflow-hidden rounded-[16px] bg-[#eeeeF4] p-6 text-left shadow-soft transition hover:-translate-y-1 hover:shadow-ios"
+          className="group overflow-hidden rounded-[24px] border border-orange-100 bg-gradient-to-br from-white to-orange-50 p-4 text-left shadow-soft transition hover:-translate-y-1 hover:shadow-ios"
           type="button"
           onClick={() => {
             if (!category) return;
@@ -1185,13 +1256,13 @@ function FeaturedCategories({ categories, setFilters, onSelect }) {
             onSelect();
           }}
         >
-          <div className="flex h-72 items-center justify-center">
+          <div className="flex h-52 items-center justify-center overflow-hidden rounded-[18px] bg-white sm:h-60">
             <img src={image} alt="" className="max-h-full w-full object-contain transition group-hover:scale-105" />
           </div>
-          <div className="px-2 pb-3 pt-4">
+          <div className="px-2 pb-2 pt-4">
             <h3 className="text-2xl font-black text-slate-950">{title}</h3>
             <p className="mt-3 text-sm leading-6 text-slate-600">{text}</p>
-            <span className="mt-6 inline-block text-sm font-bold text-red-600 underline">Ver categoria</span>
+            <span className="mt-4 inline-block text-sm font-black text-campus underline">Ver categoría</span>
           </div>
         </button>
       ))}
@@ -1605,7 +1676,7 @@ function ReviewSection({ listing, reviews, user, onReview }) {
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
-  const userReview = reviews.find((review) => review.reviewer_id === user?.id);
+  const userReview = listing.userReview ?? reviews.find((review) => review.reviewer_id === user?.id);
 
   async function submit(event) {
     event.preventDefault();
@@ -1641,6 +1712,19 @@ function ReviewSection({ listing, reviews, user, onReview }) {
         </div>
       )}
 
+      {userReview?.status === 'pending' && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-100 px-4 py-3 text-sm font-black text-amber-900">
+          Reseña en revisión
+          <span className="mt-1 block text-xs font-semibold text-amber-800/75">El administrador debe aprobarla antes de que sea visible.</span>
+        </div>
+      )}
+
+      {userReview?.status === 'rejected' && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-700">
+          Tu reseña anterior no fue aprobada. Puedes corregirla y enviarla de nuevo.
+        </div>
+      )}
+
       {user ? (
         <form className="space-y-2 border-t border-orange-100 pt-3" onSubmit={submit}>
           <div className="grid grid-cols-[7rem_1fr] gap-2">
@@ -1657,7 +1741,7 @@ function ReviewSection({ listing, reviews, user, onReview }) {
               onChange={(event) => setComment(event.target.value)}
             />
           </div>
-          <button className="secondary-btn w-full" disabled={saving}>{saving ? 'Guardando...' : userReview ? 'Actualizar resena' : 'Publicar resena'}</button>
+          <button className="secondary-btn w-full" disabled={saving}>{saving ? 'Enviando a revisión...' : userReview ? 'Actualizar y enviar a revisión' : 'Enviar reseña a revisión'}</button>
         </form>
       ) : (
         <p className="border-t border-orange-100 pt-3 text-xs font-bold text-slate-500">Inicia sesion para dejar una resena. No se permiten enlaces, spam ni resenas falsas.</p>
@@ -2593,6 +2677,7 @@ function ProfileForm({ user, profile, onSaved, onSignOut, setNotice }) {
 
 function AdminPanel({ isAdmin, listings, faculties, categories, reload, onDelete, setNotice, currentUserId }) {
   const [users, setUsers] = useState([]);
+  const [pendingReviews, setPendingReviews] = useState([]);
   const [tab, setTab] = useState('businesses');
   const [loadingUsers, setLoadingUsers] = useState(false);
 
@@ -2611,8 +2696,34 @@ function AdminPanel({ isAdmin, listings, faculties, categories, reload, onDelete
     setUsers(data ?? []);
   }
 
+  async function loadPendingReviews() {
+    if (!isAdmin) return;
+    const { data, error } = await supabase
+      .from('listing_reviews')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true });
+    if (error) {
+      setNotice(error, 'error');
+      return;
+    }
+    setPendingReviews(data ?? []);
+  }
+
   useEffect(() => {
     loadUsers();
+    loadPendingReviews();
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin) return undefined;
+    const channel = supabase
+      .channel('admin-review-moderation')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'listing_reviews' }, loadPendingReviews)
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [isAdmin]);
 
   if (!isAdmin) {
@@ -2646,6 +2757,20 @@ function AdminPanel({ isAdmin, listings, faculties, categories, reload, onDelete
     await Promise.all([loadUsers(), reload()]);
   }
 
+  async function moderateReview(id, approve) {
+    const { error } = await supabase.rpc('admin_review_listing_review', {
+      p_review_id: id,
+      p_approve: approve,
+    });
+    if (error) {
+      setNotice(error, 'error');
+      return;
+    }
+    setPendingReviews((current) => current.filter((review) => review.id !== id));
+    setNotice(approve ? 'Reseña aprobada y publicada.' : 'Reseña rechazada.', 'success');
+    await reload();
+  }
+
   async function toggleBlocked(item) {
     const { error } = await supabase.from('users').update({ is_blocked: !item.is_blocked }).eq('id', item.id);
     if (error) {
@@ -2674,6 +2799,7 @@ function AdminPanel({ isAdmin, listings, faculties, categories, reload, onDelete
         <div className="mt-6 flex flex-wrap gap-2">
           {[
             ['businesses', `Negocios (${pendingBusinesses.length})`],
+            ['reviews', `Reseñas (${pendingReviews.length})`],
             ['users', `Usuarios (${users.length})`],
             ['listings', `Publicaciones (${listings.length})`],
             ['notices', 'Avisos'],
@@ -2738,6 +2864,42 @@ function AdminPanel({ isAdmin, listings, faculties, categories, reload, onDelete
               </div>
             ))}
           </div>
+        </section>
+      )}
+
+      {tab === 'reviews' && (
+        <section className="panel overflow-hidden">
+          <div className="border-b border-slate-100 p-5">
+            <h2 className="text-xl font-black">Reseñas por aprobar</h2>
+            <p className="mt-1 text-sm text-slate-500">Solo las reseñas aprobadas afectan la calificación y aparecen públicamente.</p>
+          </div>
+          {pendingReviews.length === 0 ? (
+            <p className="p-6 text-sm font-bold text-slate-500">No hay reseñas pendientes.</p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {pendingReviews.map((review) => {
+                const listing = listings.find((item) => item.id === review.listing_id);
+                const reviewer = users.find((item) => item.id === review.reviewer_id);
+                return (
+                  <article key={review.id} className="grid gap-4 p-5 lg:grid-cols-[1fr_auto] lg:items-center">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-black text-campus">★ {Number(review.rating).toFixed(1)}</span>
+                        <span className="text-xs font-bold text-slate-400">{new Date(review.created_at).toLocaleDateString('es-MX')}</span>
+                      </div>
+                      <p className="mt-3 font-black">{listing?.title ?? 'Publicación eliminada'}</p>
+                      <p className="mt-1 text-sm leading-6 text-slate-600">{review.comment}</p>
+                      <p className="mt-2 text-xs font-bold text-slate-400">Por {reviewer?.full_name || reviewer?.email || review.reviewer_id}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button className="primary-btn !py-2" type="button" onClick={() => moderateReview(review.id, true)}>Aprobar</button>
+                      <button className="secondary-btn !border-red-200 !py-2 !text-red-600" type="button" onClick={() => moderateReview(review.id, false)}>Rechazar</button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
         </section>
       )}
 

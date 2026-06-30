@@ -72,6 +72,11 @@ textarea {
 }
 
 .mobile-nav-shell {
+  position: fixed;
+  inset-inline: 0;
+  inset-block-end: 0;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
   padding: 0.5rem max(0.75rem, env(safe-area-inset-right)) max(0.5rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-left));
   background: linear-gradient(180deg, transparent, rgba(255, 250, 244, 0.96) 32%);
 }
@@ -90,6 +95,10 @@ textarea {
 }
 
 @media (max-width: 767px) {
+  .app-header {
+    top: auto;
+  }
+
   input,
   select,
   textarea {
