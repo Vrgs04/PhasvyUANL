@@ -12,7 +12,7 @@ create table if not exists private.allowed_origins (
 );
 
 insert into private.allowed_origins (origin) values
-  ('https://phasvy-campus.pages.dev'),
+  ('https://phasvyuanl.pages.dev'),
   ('http://localhost:5173'),
   ('http://127.0.0.1:5173')
 on conflict (origin) do nothing;

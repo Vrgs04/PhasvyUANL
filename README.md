@@ -72,7 +72,7 @@ Safari en iOS requiere HTTPS para service workers fuera de localhost. La app inc
 ## Seguridad de Supabase
 
 1. Ejecuta `supabase/security-hardening.sql` en el SQL Editor del proyecto.
-2. Antes de ejecutarlo, cambia `https://phasvy-campus.pages.dev` por el dominio real de producción si usas otro.
+2. El origen de producción configurado es `https://phasvyuanl.pages.dev`; actualízalo si agregas un dominio personalizado.
 3. En Authentication > Hooks activa `public.hook_restrict_signup_email_domain` como **Before User Created hook**.
 4. En Authentication > Rate Limits revisa también los límites nativos de login y registro.
 
@@ -108,7 +108,7 @@ Opcion directa con Wrangler:
 npm run deploy:cf
 ```
 
-Cloudflare Pages publicara una URL tipo `https://phasvy-campus.pages.dev`. Como Pages usa HTTPS, la PWA podra instalarse en iPhone desde Safari con "Agregar a pantalla de inicio".
+Cloudflare Pages publica la app en `https://phasvyuanl.pages.dev`. Como Pages usa HTTPS, la PWA puede instalarse en iPhone desde Safari con "Agregar a pantalla de inicio".
 
 ## Funcionalidades
 

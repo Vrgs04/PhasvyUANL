@@ -7,7 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "deploy:cf": "npm run build && npx wrangler pages deploy dist --project-name phasvy-campus"
+    "deploy:cf": "npm run build && npx wrangler pages deploy dist --project-name phasvyuanl"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
