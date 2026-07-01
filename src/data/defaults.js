@@ -28,6 +28,7 @@ export const EMPTY_LISTING = {
   description: '',
   price: '',
   faculty_id: '',
+  faculty_ids: [],
   category_id: '',
   whatsapp: '',
   contact_note: '',

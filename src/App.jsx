@@ -164,7 +164,7 @@ function getDialCode(countryId) {
 }
 
 function createEmptyFilters() {
-  return { q: '', faculties: [], category: '', min: '', max: '' };
+  return { q: '', faculties: [], campuses: [], categories: [], min: '', max: '' };
 }
 
 function getReviews(listing) {
@@ -249,6 +249,12 @@ function getFacultyIdsByNames(faculties, names) {
 
 function getSelectedFacultyIds(filters) {
   return filters.faculties ?? [];
+}
+
+function getListingFacultyIds(listing) {
+  const ids = (listing.faculties ?? []).map((faculty) => faculty.id).filter(Boolean);
+  if (listing.faculty_id && !ids.includes(listing.faculty_id)) ids.push(listing.faculty_id);
+  return ids;
 }
 
 function getErrorMessage(error, context = '') {
@@ -409,6 +415,7 @@ function App() {
         scheduleRefresh();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'listing_images' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'listing_faculties' }, scheduleRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'listing_reviews' }, scheduleRefresh)
       .subscribe();
     return () => {
@@ -497,7 +504,7 @@ function App() {
     const { data, error } = await supabase
       .from('listings')
       .select(
-        '*, faculty:faculties(*), category:categories(*), images:listing_images(*)',
+        '*, faculty:faculties(*), category:categories(*), images:listing_images(*), listing_faculties(faculty:faculties(*))',
       )
       .order('created_at', { ascending: false });
 
@@ -555,6 +562,7 @@ function App() {
       ...listing,
       seller: sellerMap.get(listing.seller_id) ?? listing.seller,
       images: [...(listing.images ?? [])].sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0)),
+      faculties: (listing.listing_faculties ?? []).map((item) => item.faculty).filter(Boolean),
       reviews: reviewsByListing.get(listing.id) ?? listing.reviews ?? [],
       userReview: userReviewsByListing.get(listing.id) ?? null,
     }));
@@ -639,8 +647,9 @@ function App() {
     const selectedFacultyIds = getSelectedFacultyIds(filters);
     return listings.filter((listing) => {
       const matchesSold = isAdmin || listing.status !== 'deleted';
-      const matchesFaculty = selectedFacultyIds.length === 0 || selectedFacultyIds.includes(listing.faculty_id);
-      const matchesCategory = !filters.category || listing.category_id === filters.category;
+      const listingFacultyIds = getListingFacultyIds(listing);
+      const matchesFaculty = selectedFacultyIds.length === 0 || selectedFacultyIds.some((id) => listingFacultyIds.includes(id));
+      const matchesCategory = filters.categories.length === 0 || filters.categories.includes(listing.category_id);
       const matchesMin = !filters.min || Number(listing.price) >= Number(filters.min);
       const matchesMax = !filters.max || Number(listing.price) <= Number(filters.max);
       const haystack = `${listing.title} ${listing.description} ${listing.faculty?.name ?? ''} ${listing.category?.name ?? ''}`.toLowerCase();
@@ -1252,7 +1261,7 @@ function FeaturedCategories({ categories, setFilters, onSelect }) {
           type="button"
           onClick={() => {
             if (!category) return;
-            setFilters((current) => ({ ...current, category: category.id }));
+            setFilters((current) => ({ ...current, categories: [category.id] }));
             onSelect();
           }}
         >
@@ -1312,93 +1321,97 @@ function FacultyTags({ faculties, selectedFaculties, onOpenFaculty }) {
 function Filters({ filters, setFilters, faculties, categories }) {
   const update = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
   const selectedFacultyIds = getSelectedFacultyIds(filters);
-  const activeCampusId = CAMPUS_GROUPS.find((campus) => {
-    const ids = getFacultyIdsByNames(faculties, campus.names);
-    return ids.length > 0 && ids.length === selectedFacultyIds.length && ids.every((id) => selectedFacultyIds.includes(id));
-  })?.id;
-  const setSelectedFaculties = (ids) => setFilters((current) => ({ ...current, faculties: [...new Set(ids)] }));
+  const selectedCampusIds = filters.campuses ?? [];
+  const selectedCategoryIds = filters.categories ?? [];
+  const setSelectedFaculties = (ids, campuses = []) => setFilters((current) => ({
+    ...current,
+    faculties: [...new Set(ids)],
+    campuses,
+  }));
   const toggleFaculty = (facultyId) => {
     const nextIds = selectedFacultyIds.includes(facultyId)
       ? selectedFacultyIds.filter((id) => id !== facultyId)
       : [...selectedFacultyIds, facultyId];
-    setSelectedFaculties(nextIds);
+    setSelectedFaculties(nextIds, []);
   };
   const applyCampus = (campus) => {
     const ids = getFacultyIdsByNames(faculties, campus.names);
-    const isExactSelection = ids.length === selectedFacultyIds.length && ids.every((id) => selectedFacultyIds.includes(id));
-    setSelectedFaculties(isExactSelection ? [] : ids);
+    const isActive = selectedCampusIds.includes(campus.id);
+    const nextIds = isActive
+      ? selectedFacultyIds.filter((id) => !ids.includes(id))
+      : [...selectedFacultyIds, ...ids];
+    const nextCampuses = isActive
+      ? selectedCampusIds.filter((id) => id !== campus.id)
+      : [...selectedCampusIds, campus.id];
+    setSelectedFaculties(nextIds, nextCampuses);
   };
-  const quickFaculties = QUICK_FACULTIES.map((name) => {
-    const aliases = name === 'FAPSI' ? ['FAPSI', 'Psicologia'] : [name];
-    return {
-      name,
-      faculty: faculties.find((faculty) => aliases.some((alias) => faculty.name.toLowerCase() === alias.toLowerCase())),
-    };
-  }).filter((item) => item.faculty);
+  const toggleCategory = (categoryId) => update(
+    'categories',
+    selectedCategoryIds.includes(categoryId)
+      ? selectedCategoryIds.filter((id) => id !== categoryId)
+      : [...selectedCategoryIds, categoryId],
+  );
+  const activeCount = selectedFacultyIds.length + selectedCategoryIds.length
+    + (filters.q ? 1 : 0) + (filters.min ? 1 : 0) + (filters.max ? 1 : 0);
 
   return (
-    <div className="panel mx-auto w-full max-w-6xl space-y-4 p-4 md:p-5">
-      <div className="flex items-center justify-between gap-3">
-        <p className="label">Filtrar publicaciones</p>
-        <button className="text-sm font-black text-campus underline" type="button" onClick={() => setFilters(createEmptyFilters())}>
-          Limpiar filtros
-        </button>
-      </div>
-      {quickFaculties.length > 0 && (
-        <div className="filter-chips no-scrollbar flex gap-2 overflow-x-auto pb-2 md:flex-wrap md:overflow-visible">
-          <button
-            className={cx('chip', selectedFacultyIds.length === 0 && 'chip-active')}
-            type="button"
-            onClick={() => setSelectedFaculties([])}
-          >
-            Todas
+    <div className="mx-auto w-full max-w-6xl overflow-hidden rounded-[28px] border border-orange-100 bg-white shadow-soft">
+      <div className="flex flex-col gap-4 bg-gradient-to-r from-slate-950 to-slate-800 p-5 text-white md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-300">Encuentra exactamente lo que buscas</p>
+          <h2 className="mt-1 text-2xl font-black">Filtros</h2>
+        </div>
+        <div className="flex items-center gap-3">
+          {activeCount > 0 && <span className="rounded-full bg-orange-500 px-3 py-1 text-xs font-black">{activeCount} activos</span>}
+          <button className="text-sm font-black text-white underline decoration-orange-400 underline-offset-4" type="button" onClick={() => setFilters(createEmptyFilters())}>
+            Limpiar
           </button>
-          {CAMPUS_GROUPS.map((campus) => {
-            const ids = getFacultyIdsByNames(faculties, campus.names);
-            const isActive = activeCampusId === campus.id;
-            return (
-              <button
-                key={campus.id}
-                className={cx('chip', isActive && 'chip-active')}
-                type="button"
-                onClick={() => applyCampus(campus)}
-              >
+        </div>
+      </div>
+
+      <div className="space-y-6 p-4 md:p-6">
+        <input className="field !border-orange-200 !bg-orange-50/40 !py-4" placeholder="Buscar productos, comida, libros o servicios..." value={filters.q} onChange={(event) => update('q', event.target.value)} />
+
+        <div>
+          <p className="mb-3 text-xs font-black uppercase tracking-[0.12em] text-slate-500">Campus <span className="normal-case tracking-normal text-slate-400">— selecciona todas sus facultades</span></p>
+          <div className="flex flex-wrap gap-2">
+            {CAMPUS_GROUPS.map((campus) => (
+              <button key={campus.id} className={cx('chip', selectedCampusIds.includes(campus.id) && 'chip-active')} type="button" onClick={() => applyCampus(campus)}>
                 {campus.shortLabel ?? campus.label}
               </button>
-            );
-          })}
-          {quickFaculties.map(({ name, faculty }) => (
-            <button
-              key={faculty.id}
-              className={cx('chip', !activeCampusId && selectedFacultyIds.includes(faculty.id) && 'chip-active')}
-              type="button"
-              onClick={() => toggleFaculty(faculty.id)}
-            >
-              {name}
-            </button>
-          ))}
+            ))}
+          </div>
         </div>
-      )}
-      <input className="field" placeholder="Buscar libros, calculadora, comida, asesorias..." value={filters.q} onChange={(event) => update('q', event.target.value)} />
-      <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <select className="field" value="" onChange={(event) => event.target.value && toggleFaculty(event.target.value)}>
-          <option value="">Agregar facultad...</option>
-          {faculties.map((faculty) => (
-            <option key={faculty.id} value={faculty.id}>
-              {faculty.name}
-            </option>
-          ))}
-        </select>
-        <select className="field" value={filters.category} onChange={(event) => update('category', event.target.value)}>
-          <option value="">Todas las categorias</option>
-          {categories.map((category) => (
-            <option key={category.id} value={category.id}>
-              {category.name}
-            </option>
-          ))}
-        </select>
-        <input className="field" type="number" min="0" placeholder="Precio min." value={filters.min} onChange={(event) => update('min', event.target.value)} />
-        <input className="field" type="number" min="0" placeholder="Precio max." value={filters.max} onChange={(event) => update('max', event.target.value)} />
+
+        <div>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Facultades <span className="normal-case tracking-normal text-slate-400">— selección múltiple e individual</span></p>
+            <button className="text-xs font-black text-campus" type="button" onClick={() => setSelectedFaculties([], [])}>Quitar todas</button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {faculties.map((faculty) => (
+              <button key={faculty.id} className={cx('chip', selectedFacultyIds.includes(faculty.id) && 'chip-active')} type="button" onClick={() => toggleFaculty(faculty.id)}>
+                {faculty.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <p className="mb-3 text-xs font-black uppercase tracking-[0.12em] text-slate-500">Categorías <span className="normal-case tracking-normal text-slate-400">— puedes elegir varias</span></p>
+          <div className="flex flex-wrap gap-2">
+            {categories.map((category) => (
+              <button key={category.id} className={cx('chip', selectedCategoryIds.includes(category.id) && 'chip-active')} type="button" onClick={() => toggleCategory(category.id)}>
+                {category.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-3 border-t border-slate-100 pt-5 sm:grid-cols-2">
+          <input className="field" type="number" min="0" placeholder="Precio mínimo" value={filters.min} onChange={(event) => update('min', event.target.value)} />
+          <input className="field" type="number" min="0" placeholder="Precio máximo" value={filters.max} onChange={(event) => update('max', event.target.value)} />
+        </div>
       </div>
     </div>
   );
@@ -1409,7 +1422,7 @@ function SelectionMarket({ selection, faculties, listings, onBack, onOpen, onLog
   const campus = isCampus ? CAMPUS_GROUPS.find((item) => item.id === selection.id) : null;
   const faculty = !isCampus ? faculties.find((item) => item.id === selection.id) : null;
   const selectedFacultyIds = isCampus ? getFacultyIdsByNames(faculties, campus?.names ?? []) : [selection.id];
-  const selectedListings = listings.filter((listing) => selectedFacultyIds.includes(listing.faculty_id));
+  const selectedListings = listings.filter((listing) => getListingFacultyIds(listing).some((id) => selectedFacultyIds.includes(id)));
   const topSellers = getTopSellers(selectedListings);
   const parentCampus = !isCampus
     ? FEATURED_CAMPUSES.find((item) => item.names.some((name) => name.toLowerCase() === faculty?.name?.toLowerCase()))
@@ -1565,6 +1578,8 @@ function SellerJoin({ setView, setFilters, onJoin }) {
 
 function ListingCard({ listing, onOpen, featured = false, rank = null }) {
   const cover = listing.images?.[0]?.url;
+  const facultyNames = (listing.faculties?.length ? listing.faculties : [listing.faculty]).filter(Boolean).map((faculty) => faculty.name);
+  const facultyLabel = facultyNames.length > 1 ? `${facultyNames[0]} +${facultyNames.length - 1}` : facultyNames[0] ?? 'Campus';
   const rating = getListingRating(listing);
   const reviewCount = getReviews(listing).length || listing.reviews_count || 0;
   const sellerStats = getSellerStats([listing], listing.seller_id);
@@ -1573,7 +1588,7 @@ function ListingCard({ listing, onOpen, featured = false, rank = null }) {
       {featured && <span className="absolute left-4 top-4 z-10 rounded-full bg-gradient-to-r from-orange-500 to-red-500 px-3 py-1.5 text-xs font-black text-white shadow-lg">TOP #{rank}</span>}
       <div className="aspect-[4/3] bg-slate-100 p-2">
         <div className="h-full overflow-hidden rounded-[22px] bg-slate-200">
-          {cover ? <img src={cover} alt={listing.title} className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-4xl text-slate-300">+</div>}
+          {cover ? <img src={cover} alt={listing.title} className="h-full w-full bg-white object-contain" /> : <div className="grid h-full place-items-center text-4xl text-slate-300">+</div>}
         </div>
       </div>
       <div className="space-y-3 p-4 pt-2">
@@ -1585,7 +1600,7 @@ function ListingCard({ listing, onOpen, featured = false, rank = null }) {
         <p className="line-clamp-2 text-sm text-slate-500">{listing.description}</p>
         <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
           <div className="min-w-0">
-            <p className="truncate text-xs font-black text-slate-500">{listing.faculty?.name ?? 'Campus'}</p>
+            <p className="truncate text-xs font-black text-slate-500">{facultyLabel}</p>
             <p className="truncate text-xs font-bold text-slate-400">{listing.category?.name ?? 'General'}</p>
           </div>
           <p className={cx('shrink-0 rounded-full px-3 py-1.5 font-black text-white shadow-soft', featured ? 'bg-gradient-to-r from-orange-500 to-red-500 text-base' : 'bg-gradient-to-r from-slate-900 to-slate-700 text-sm')}>{currency.format(listing.price ?? 0)}</p>
@@ -1617,6 +1632,7 @@ function ListingDetail({ listing, canManage, onClose, onDelete, onSold, user, on
   const reviews = getReviews(listing);
   const productRating = getListingRating(listing);
   const sellerStats = getSellerStats([listing], listing.seller_id);
+  const facultyLabel = (listing.faculties?.length ? listing.faculties : [listing.faculty]).filter(Boolean).map((faculty) => faculty.name).join(', ');
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-ink/30 p-3 backdrop-blur-sm md:p-8">
@@ -1626,7 +1642,7 @@ function ListingDetail({ listing, canManage, onClose, onDelete, onSold, user, on
             <div className="flex snap-x gap-2 overflow-x-auto no-scrollbar">
               {coverImages.map((image, index) => (
                 <div key={image.id ?? index} className="aspect-square min-w-full">
-                  {image.url ? <img src={image.url} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-slate-300">Sin imagen</div>}
+                  {image.url ? <img src={image.url} alt="" className="h-full w-full bg-white object-contain" /> : <div className="grid h-full place-items-center text-slate-300">Sin imagen</div>}
                 </div>
               ))}
             </div>
@@ -1634,7 +1650,7 @@ function ListingDetail({ listing, canManage, onClose, onDelete, onSold, user, on
           <div className="space-y-5 p-5 md:p-7">
             <div className="flex justify-between gap-4">
               <div>
-                <p className="label">{listing.faculty?.name} - {listing.category?.name}</p>
+                <p className="label">{facultyLabel || 'Campus'} - {listing.category?.name}</p>
                 <h2 className="mt-2 text-3xl font-black">{listing.title}</h2>
               </div>
               <button className="secondary-btn !h-11 !w-11 !rounded-full !p-0" onClick={onClose} aria-label="Cerrar">x</button>
@@ -1753,47 +1769,49 @@ function ReviewSection({ listing, reviews, user, onReview }) {
 function NotificationsView({ notifications, onRead }) {
   const unreadCount = notifications.filter((item) => !item.read_at).length;
   const styles = {
-    success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    warning: 'border-amber-200 bg-amber-50 text-amber-800',
-    business: 'border-violet-200 bg-violet-50 text-violet-700',
-    info: 'border-sky-200 bg-sky-50 text-sky-700',
+    success: 'bg-emerald-100 text-emerald-700',
+    warning: 'bg-amber-100 text-amber-700',
+    business: 'bg-violet-100 text-violet-700',
+    info: 'bg-sky-100 text-sky-700',
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5">
-      <section className="dark-panel flex flex-col gap-4 p-6 md:flex-row md:items-center md:justify-between md:p-8">
+    <div className="mx-auto max-w-3xl space-y-4">
+      <section className="flex flex-col gap-4 rounded-[26px] border border-slate-200 bg-white p-5 text-slate-950 shadow-sm md:flex-row md:items-center md:justify-between md:p-6">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-200">Centro de avisos</p>
-          <h1 className="mt-2 text-4xl font-black">Notificaciones</h1>
-          <p className="mt-2 text-sm text-white/60">{unreadCount ? `${unreadCount} sin leer` : 'Estás al día'}</p>
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-campus">Centro de avisos</p>
+          <h1 className="mt-1 text-3xl font-black">Notificaciones</h1>
+          <p className="mt-1 text-sm text-slate-500">{unreadCount ? `${unreadCount} sin leer` : 'Todo al día'}</p>
         </div>
-        {unreadCount > 0 && <button className="secondary-btn !border-white/15 !bg-white/10 !text-white" type="button" onClick={() => onRead()}>Marcar todas como leídas</button>}
+        {unreadCount > 0 && <button className="text-left text-sm font-black text-campus" type="button" onClick={() => onRead()}>Marcar todas como leídas</button>}
       </section>
 
       {notifications.length === 0 ? (
-        <section className="panel p-8 text-center">
+        <section className="rounded-[26px] border border-dashed border-slate-300 bg-white/70 p-10 text-center">
           <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-orange-100 text-campus"><span className="h-6 w-6"><NavIcon name="bell" /></span></div>
           <h2 className="mt-4 text-xl font-black">Todavía no tienes notificaciones</h2>
           <p className="mt-2 text-sm text-slate-500">Aquí recibirás aprobaciones, cambios de rol, avisos y novedades de Phasvy.</p>
         </section>
       ) : (
-        <div className="space-y-3">
+        <div className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-sm">
           {notifications.map((item) => (
             <button
               key={item.id}
               type="button"
               className={cx(
-                'panel grid w-full gap-3 border p-5 text-left transition hover:-translate-y-0.5 hover:shadow-soft md:grid-cols-[auto_1fr_auto] md:items-start',
-                item.read_at ? 'border-slate-100 opacity-75' : styles[item.notification_type] ?? styles.info,
+                'grid w-full grid-cols-[auto_1fr] gap-3 border-b border-slate-100 p-4 text-left transition last:border-b-0 hover:bg-slate-50 sm:grid-cols-[auto_1fr_auto] sm:items-start',
+                !item.read_at && 'bg-orange-50/45',
               )}
               onClick={() => !item.read_at && onRead(item.id)}
             >
-              <span className={cx('mt-1 h-3 w-3 rounded-full', item.read_at ? 'bg-slate-300' : 'bg-current')} />
-              <span>
-                <span className="block font-black text-slate-900">{item.title}</span>
-                <span className="mt-1 block text-sm leading-6 text-slate-600">{item.message}</span>
+              <span className={cx('mt-0.5 grid h-9 w-9 place-items-center rounded-xl', item.read_at ? 'bg-slate-100 text-slate-400' : styles[item.notification_type] ?? styles.info)}>
+                <span className="h-4 w-4"><NavIcon name="bell" /></span>
               </span>
-              <span className="text-xs font-bold text-slate-400">{new Date(item.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}</span>
+              <span>
+                <span className="flex items-center gap-2 font-black text-slate-900">{item.title}{!item.read_at && <span className="h-2 w-2 rounded-full bg-orange-500" />}</span>
+                <span className="mt-1 block text-sm leading-5 text-slate-500">{item.message}</span>
+              </span>
+              <span className="col-start-2 text-xs font-semibold text-slate-400 sm:col-start-auto">{new Date(item.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}</span>
             </button>
           ))}
         </div>
@@ -1905,6 +1923,10 @@ function RequireSeller({ user, isSeller, setView, children }) {
 
 function ListingForm({ user, faculties, categories, editing, onDone, setNotice }) {
   const [form, setForm] = useState(editing ?? EMPTY_LISTING);
+  const [selectedFacultyIds, setSelectedFacultyIds] = useState(() => {
+    const existingIds = (editing?.faculties ?? []).map((faculty) => faculty.id).filter(Boolean);
+    return existingIds.length ? existingIds : editing?.faculty_id ? [editing.faculty_id] : [];
+  });
   const initialPhone = splitPhoneNumber(editing?.whatsapp);
   const [phoneCode, setPhoneCode] = useState(initialPhone.code);
   const [phone, setPhone] = useState(initialPhone.number);
@@ -1918,6 +1940,8 @@ function ListingForm({ user, faculties, categories, editing, onDone, setNotice }
 
   useEffect(() => {
     setForm(editing ?? EMPTY_LISTING);
+    const existingIds = (editing?.faculties ?? []).map((faculty) => faculty.id).filter(Boolean);
+    setSelectedFacultyIds(existingIds.length ? existingIds : editing?.faculty_id ? [editing.faculty_id] : []);
     const nextPhone = splitPhoneNumber(editing?.whatsapp);
     setPhoneCode(nextPhone.code);
     setPhone(nextPhone.number);
@@ -1927,6 +1951,24 @@ function ListingForm({ user, faculties, categories, editing, onDone, setNotice }
         .map((image) => ({ ...image, key: image.id, kind: 'existing', preview: image.url })),
     );
   }, [editing?.id]);
+
+  function toggleListingFaculty(facultyId) {
+    setSelectedFacultyIds((current) => (
+      current.includes(facultyId)
+        ? current.filter((id) => id !== facultyId)
+        : [...current, facultyId]
+    ));
+  }
+
+  function toggleListingCampus(campus) {
+    const ids = getFacultyIdsByNames(faculties, campus.names);
+    const allSelected = ids.length > 0 && ids.every((id) => selectedFacultyIds.includes(id));
+    setSelectedFacultyIds((current) => (
+      allSelected
+        ? current.filter((id) => !ids.includes(id))
+        : [...new Set([...current, ...ids])]
+    ));
+  }
 
   function addImages(fileList) {
     const files = Array.from(fileList ?? []);
@@ -1975,6 +2017,10 @@ function ListingForm({ user, faculties, categories, editing, onDone, setNotice }
       setNotice('La descripcion debe tener al menos 10 caracteres.', 'error');
       return;
     }
+    if (selectedFacultyIds.length < 1) {
+      setNotice('Selecciona al menos una facultad o un campus.', 'error');
+      return;
+    }
     if (phone.length !== 10) {
       setNotice('El WhatsApp debe tener exactamente 10 digitos.', 'error');
       return;
@@ -1985,7 +2031,7 @@ function ListingForm({ user, faculties, categories, editing, onDone, setNotice }
       title: sanitizeSingleLine(form.title, 120),
       description: sanitizeMultiline(form.description, 3000),
       price: Number(form.price),
-      faculty_id: form.faculty_id,
+      faculty_id: selectedFacultyIds[0],
       category_id: form.category_id,
       whatsapp: `${getDialCode(phoneCode)}${phone}`,
       contact_note: sanitizeSingleLine(form.contact_note, 300),
@@ -2000,6 +2046,22 @@ function ListingForm({ user, faculties, categories, editing, onDone, setNotice }
     if (result.error) {
       setSaving(false);
       return setNotice(result.error, 'error');
+    }
+
+    const { error: clearFacultiesError } = await supabase
+      .from('listing_faculties')
+      .delete()
+      .eq('listing_id', result.data.id);
+    if (clearFacultiesError) {
+      setSaving(false);
+      return setNotice(clearFacultiesError, 'error');
+    }
+    const { error: facultiesError } = await supabase.from('listing_faculties').insert(
+      selectedFacultyIds.map((facultyId) => ({ listing_id: result.data.id, faculty_id: facultyId })),
+    );
+    if (facultiesError) {
+      setSaving(false);
+      return setNotice(facultiesError, 'error');
     }
 
     const existingItems = imageItems.filter((item) => item.kind === 'existing');
@@ -2053,20 +2115,49 @@ function ListingForm({ user, faculties, categories, editing, onDone, setNotice }
     <form className="panel mx-auto max-w-3xl space-y-4 p-4 md:p-6" onSubmit={saveListing}>
       <div>
         <p className="label">{editing ? 'Editar publicacion' : 'Nueva publicacion'}</p>
-        <h1 className="mt-2 text-3xl font-black">Publica para tu facultad</h1>
+        <h1 className="mt-2 text-3xl font-black">Publica en una o varias facultades</h1>
       </div>
       <input className="field" required placeholder="Titulo" value={form.title} onChange={(event) => update('title', event.target.value)} />
       <textarea className="field min-h-32" required minLength="10" placeholder="Descripcion, estado, punto de entrega..." value={form.description} onChange={(event) => update('description', event.target.value)} />
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-2">
         <input className="field" required type="number" min="0" placeholder="Precio MXN" value={form.price} onChange={(event) => update('price', event.target.value)} />
-        <select className="field" required value={form.faculty_id} onChange={(event) => update('faculty_id', event.target.value)}>
-          <option value="">Facultad</option>
-          {faculties.map((faculty) => <option key={faculty.id} value={faculty.id}>{faculty.name}</option>)}
-        </select>
         <select className="field" required value={form.category_id} onChange={(event) => update('category_id', event.target.value)}>
           <option value="">Categoria</option>
           {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
         </select>
+      </div>
+      <div className="space-y-4 rounded-3xl border border-orange-100 bg-orange-50/50 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="font-black">¿Dónde quieres publicar?</p>
+            <p className="mt-1 text-xs font-semibold text-slate-500">Elige facultades individualmente o selecciona un campus completo.</p>
+          </div>
+          <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-campus">{selectedFacultyIds.length} seleccionadas</span>
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-black uppercase tracking-[0.1em] text-slate-500">Campus</p>
+          <div className="flex flex-wrap gap-2">
+            {CAMPUS_GROUPS.map((campus) => {
+              const ids = getFacultyIdsByNames(faculties, campus.names);
+              const active = ids.length > 0 && ids.every((id) => selectedFacultyIds.includes(id));
+              return (
+                <button key={campus.id} className={cx('chip', active && 'chip-active')} type="button" onClick={() => toggleListingCampus(campus)}>
+                  {campus.shortLabel ?? campus.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-black uppercase tracking-[0.1em] text-slate-500">Facultades</p>
+          <div className="flex flex-wrap gap-2">
+            {faculties.map((faculty) => (
+              <button key={faculty.id} className={cx('chip', selectedFacultyIds.includes(faculty.id) && 'chip-active')} type="button" onClick={() => toggleListingFaculty(faculty.id)}>
+                {faculty.name}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         <div className="grid grid-cols-[8.5rem_1fr] gap-2">
@@ -2100,7 +2191,7 @@ function ListingForm({ user, faculties, categories, editing, onDone, setNotice }
             {imageItems.map((item, index) => (
               <div key={item.key} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="relative aspect-square bg-slate-100">
-                  <img src={item.preview} alt={`Imagen ${index + 1}`} className="h-full w-full object-cover" />
+                  <img src={item.preview} alt={`Imagen ${index + 1}`} className="h-full w-full bg-white object-contain" />
                   {index === 0 && <span className="absolute left-2 top-2 rounded-full bg-campus px-2 py-1 text-[10px] font-black text-white">Portada</span>}
                 </div>
                 <div className="grid grid-cols-3 gap-1 p-1.5">
@@ -2147,7 +2238,7 @@ function MyListings({ listings, onOpen, onEdit, onSold, onDelete }) {
           {listings.map((listing) => (
             <div key={listing.id} className="panel grid grid-cols-[104px_1fr] overflow-hidden">
               <button className="bg-slate-100" onClick={() => onOpen(listing)}>
-                {listing.images?.[0]?.url && <img src={listing.images[0].url} alt="" className="h-full w-full object-cover" />}
+                {listing.images?.[0]?.url && <img src={listing.images[0].url} alt="" className="h-full w-full bg-white object-contain" />}
               </button>
               <div className="space-y-3 p-4">
                 <div className="flex items-start justify-between gap-3">
