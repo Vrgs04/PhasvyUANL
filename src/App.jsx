@@ -504,7 +504,7 @@ function App() {
     const { data, error } = await supabase
       .from('listings')
       .select(
-        '*, faculty:faculties(*), category:categories(*), images:listing_images(*), listing_faculties(faculty:faculties(*))',
+        '*, faculty:faculties!listings_faculty_id_fkey(*), category:categories(*), images:listing_images(*), listing_faculties(faculty:faculties!listing_faculties_faculty_id_fkey(*))',
       )
       .order('created_at', { ascending: false });
 
